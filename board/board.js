@@ -1674,6 +1674,73 @@ function glisser(panneau, sens) {
     () => panneau.classList.remove("entre-d", "entre-g"), { once: true });
 }
 
+/* ── LA PLAQUE DE VERRE DE LA BARRE D'ONGLETS ────────────────────────────────
+   Ce code ne fait qu'UNE chose : mesurer l'onglet actif et pousser trois valeurs
+   dans le style de la plaque (--x, sa largeur, et --sx pendant l'étirement).
+   Toute la matière et toute la courbe vivent dans board.css — on peut changer
+   l'allure du verre sans relire une ligne de JS.
+
+   `offsetLeft` est mesuré depuis la piste elle-même, qui est `position:relative`
+   pour cette raison. La plaque part de `left:0`, donc translateX(offsetLeft) les
+   aligne, padding de la piste compris.
+
+   POURQUOI UN ResizeObserver ET PAS UN APPEL DANS rendChrome(). Trois choses
+   déplacent l'onglet actif sans qu'on ait cliqué : le redimensionnement de la
+   fenêtre, la bascule de la barre en deux rangées sous 1415 px, et un compteur
+   de pastille qui passe de 9 à 10 (l'onglet s'élargit). Les trois changent la
+   taille de la piste, donc un observateur sur la piste les attrape toutes les
+   trois. Le faire dans rendChrome() coûterait une lecture de mise en page
+   forcée par seconde, pour un événement qui arrive trois fois par jour. */
+function mouvementReduit() {
+  try { return matchMedia("(prefers-reduced-motion: reduce)").matches; }
+  catch { return false; }
+}
+
+let curseurPose = false;
+
+function placerCurseur(anime) {
+  const piste = $(".onglets"), plaque = $(".onglets .curseur");
+  const actif = $(".onglets .onglet[aria-selected=\"true\"]");
+  if (!piste || !plaque || !actif) return;
+  const x = actif.offsetLeft, large = actif.offsetWidth;
+  // Barre pas encore mesurable : polices en cours de chargement, ou onglet
+  // dans un panneau masqué. On ne pose RIEN plutôt que de poser une plaque de
+  // zéro pixel qui traverserait ensuite l'écran.
+  if (!large) return;
+
+  const sec = !anime || !curseurPose || mouvementReduit();
+  if (sec) plaque.classList.add("sec");
+
+  const depuis = parseFloat(plaque.dataset.x || "0");
+  plaque.style.setProperty("--x", x + "px");
+  plaque.style.width = large + "px";
+  plaque.style.opacity = "1";
+  plaque.dataset.x = String(x);
+
+  if (sec) {
+    // Reflow forcé avant de rendre la transition : sans lui, retirer la classe
+    // dans le même tour de boucle laisserait le navigateur animer quand même.
+    void plaque.offsetWidth;
+    plaque.classList.remove("sec");
+    curseurPose = true;
+    return;
+  }
+
+  // L'étirement liquide, proportionnel au voyage et borné à 10 %.
+  const saut = Math.abs(x - depuis);
+  if (saut > 4) {
+    plaque.style.setProperty("--sx", Math.min(1.10, 1 + saut / 900).toFixed(3));
+    clearTimeout(plaque._detente);
+    plaque._detente = setTimeout(() => plaque.style.setProperty("--sx", "1"), 110);
+    // FILET : si le minuteur est perdu — onglet fermé puis rouvert, machine qui
+    // décroche, minuteur écrasé par une bascule rapide — la plaque resterait
+    // étirée pour toujours. La fin du voyage la remet à plat dans tous les cas.
+    plaque.addEventListener("transitionend", ev => {
+      if (ev.propertyName === "--x") plaque.style.setProperty("--sx", "1");
+    }, { once: true });
+  }
+}
+
 function ongler(quel) {
   const sens = sensOnglet(ongletActif, quel);
   ongletActif = quel;
@@ -1683,6 +1750,7 @@ function ongler(quel) {
     attr($(o.onglet), "aria-selected", nom === quel);
     if (nom === quel && sens) glisser(p, sens);
   }
+  placerCurseur(true);
   // Le bandeau d'attention ne concerne que les conversations : ailleurs il
   // mentirait sur ce que l'écran montre.
   $("#attention").hidden = quel !== "board";
@@ -2021,6 +2089,17 @@ $("#h-aide").onclick = () => {
 // Le câblage découle de la table : ajouter un onglet ne demande plus de penser
 // à trois endroits.
 for (const [nom, o] of Object.entries(PANNEAUX)) $(o.onglet).onclick = () => ongler(nom);
+
+// La plaque se pose après le premier rendu, puis à chaque fois que les polices
+// arrivent (elles changent la largeur des onglets) et que la piste change de
+// taille. Les trois appels sont « secs » : aucun voyage, juste une remesure.
+requestAnimationFrame(() => placerCurseur(false));
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => placerCurseur(false)).catch(() => {});
+}
+if (window.ResizeObserver && $(".onglets")) {
+  new ResizeObserver(() => placerCurseur(false)).observe($(".onglets"));
+}
 setInterval(rendFlux, 1000);       // seule chose qui tourne en local : la fraîcheur
 brancherFlux();
 
