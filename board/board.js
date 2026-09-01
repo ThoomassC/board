@@ -271,6 +271,9 @@ function creerCarte(sid) {
     '<div class="tech"><span class="id"></span><span class="meta"></span></div>' +
     '<div class="dit"></div>' +
     '<div class="bas"><span class="pill"><i class="gl"></i><b class="lib"></b></span>' +
+      '<button class="valider" type="button" hidden>' +
+        '<i aria-hidden="true">\u2713</i>lu</button>' +
+      '<span class="relue" hidden><i aria-hidden="true">\u2713</i>relue</span>' +
       '<span class="pr-puce" hidden></span>' +
       '<span class="chrono"></span></div>' +
     '<div class="ctx"><span class="ctx-tr"><i></i>' +
@@ -282,13 +285,28 @@ function creerCarte(sid) {
   c.addEventListener("keydown", ev => {
     if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ouvrir(sid); }
   });
-  // Survol soutenu = « vu ». Sans ça le board crie au loup en permanence.
+  // Survol soutenu = « vu », SAUF pour « à relire ».
+  //
+  // « À relire » a désormais un bouton : la conversation attend une décision de
+  // l'utilisateur, pas un regard. Or le survol la marquait au bout de 600 ms —
+  // c'est-à-dire pendant le trajet de la souris VERS le bouton. Le clic serait
+  // arrivé sur une carte déjà marquée, et le bouton n'aurait rien voulu dire.
+  // Les autres états gardent la règle du survol : elle est ce qui empêche le
+  // bandeau de crier au loup en permanence.
   c.addEventListener("mouseenter", () => {
+    const e = sessionDe(sid);
+    if (e && e.state === "review") return;
     survol.set(sid, setTimeout(() => marquerVu(sid), 600));
   });
   c.addEventListener("mouseleave", () => {
     clearTimeout(survol.get(sid)); survol.delete(sid);
   });
+  // « lu » : la conversation a été relue et n'attend plus rien de personne.
+  $(".valider", c).addEventListener("click", ev => {
+    ev.stopPropagation();          // sinon le clic ouvre aussi la fiche
+    validerRelue(sid);
+  });
+
   // La poubelle ne détruit rien : elle sort la conversation du board vivant.
   $(".jeter", c).addEventListener("click", ev => {
     ev.stopPropagation();
@@ -333,6 +351,13 @@ function majCarte(c, e) {
   texte($(".chrono", c), e.since);
   // La pastille ecrit l'etat en clair : c'est le canal STATUT depuis Ardoise.
   texte($(".lib", c), e.libelle);
+
+  // Le bouton n'existe que là où il a un sens : une conversation « à relire »
+  // pas encore acquittée. Marquée, il laisse la place à un témoin statique —
+  // sans lui, la carte serait simplement grisée et on ne saurait pas pourquoi.
+  const arelire = e.state === "review";
+  $(".valider", c).hidden = !(arelire && !e.seen);
+  $(".relue", c).hidden   = !(arelire && e.seen);
   attr(c, "title", `${e.libelle} · ${e.project} · ${e.repo || ""}`);
 
   // ── la PR de cette branche, s'il en existe une
@@ -553,6 +578,43 @@ function sessionDe(sid) {
   for (const g of (dernier?.groupes || []))
     for (const e of (g.sessions || [])) if (e.sid === sid) return e;
   return null;
+}
+
+/* ── « RELUE » ────────────────────────────────────────────────────────────────
+   Ce que le bouton fait, et surtout ce qu'il NE fait pas.
+
+   Il ne touche pas à la conversation : aucun message n'est envoyé, aucun état
+   de session n'est modifié. Il écrit un accusé de lecture dans seen.json, par
+   la route /api/vu qui existait déjà — la même que le survol utilisait seul.
+   Le contrat reste intact : les capteurs sont les seuls producteurs d'état, le
+   navigateur ne dit que ce que L'UTILISATEUR a fait, jamais ce que la
+   conversation fait.
+
+   La clé est `cle_vu` = sid:état:horodatage. Donc l'accusé porte sur CE
+   passage en « à relire » : si la conversation retravaille puis redemande une
+   relecture, elle réapparaît dans le bandeau. On ne fait pas taire une
+   conversation, on acquitte un tour.
+
+   Le repeint est LOCAL et immédiat, alors que le flux confirmera dans la
+   seconde. C'est le patron que marquerVu() suivait déjà (il posait `e.seen`
+   avant la réponse) : un clic sans réponse visible passe pour un clic perdu.
+   Aucun compteur n'est inventé pour autant — on affiche l'accusé qu'on vient
+   d'écrire, pas un état de conversation deviné. */
+function validerRelue(sid) {
+  const e = sessionDe(sid);
+  if (!e || e.seen) return;
+  marquerVu(sid);
+
+  const c = document.querySelector(`.carte[data-sid="${CSS.escape(sid)}"]`);
+  if (c) majCarte(c, e);
+
+  // Le bandeau d'attention est calculé par le serveur : il ignore encore
+  // l'accusé. On retire l'entrée pour que la file d'attente se vide sous le
+  // doigt, plutôt qu'une seconde plus tard.
+  if (dernier && Array.isArray(dernier.attention)) {
+    dernier.attention = dernier.attention.filter(a => a.sid !== sid);
+    rendAttention(dernier);
+  }
 }
 
 function marquerVu(sid) {
