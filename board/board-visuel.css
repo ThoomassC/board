@@ -1,0 +1,181 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   board-visuel.css — l'identité visuelle « board »
+
+   Chargé APRÈS board.css et onglet-pr.css : à spécificité égale je gagne par
+   l'ordre de la cascade. Aucun !important dans ce fichier — nulle part.
+
+   PARTI PRIS (5 lignes, tranché) — RÉVISÉ LE 01/09 AVEC ARDOISE
+   Une board d'école primaire en îlots, pas un amphi ni un atelier : des tables
+   collées par deux ou trois (mes colonnes), chaque session à SA place, une
+   silhouette qu'on devine plus qu'on ne la dessine. Les FORMES sont intactes ;
+   seule la matière a changé. Le bois brun et le vert sauge sont partis : la
+   palette Ardoise descend tout entière d'une seule teinte, et deux tons chauds
+   étaient les seuls éléments de l'écran à ne pas en faire partie. Le grain, le
+   bord de table, le sous-main et le sol du bandeau sont désormais taillés dans
+   le même violet que les surfaces, une ou deux clartés à côté — on les devine,
+   on ne les regarde pas. La forme raconte la posture, la couleur reste au
+   statut : je ne dessine qu'en tons neutres, jamais dans les pigments
+   amber/red/sky/green/grey.
+
+   RÈGLE DES CANAUX (docs/SCHEMA.md) — RAPPEL, non négociable, je n'y touche pas :
+     PROJET   -> filet 2px de .col-hd + couleur de .col-hd .nm.     Je n'écris
+                 aucune couleur sur ces deux endroits.
+     STATUT   -> pastille .pill + glyphe .gl + bordure de .carte + .attention.
+                 (le bord gauche de 5 px a disparu avec Ardoise : une carte
+                 autonome et arrondie ne porte pas de rail.) Idem, jamais touché.
+     CONTEXTE -> uniquement le remplissage de .ctx-tr i (posé en JS, inline).
+                 Idem.
+   Le décor n'a droit qu'aux surfaces neutres : fonds, textures, formes de
+   pseudo-éléments teintées avec MES variables --sv-*, jamais avec --amber,
+   --red, --sky, --green ni --grey.
+
+   MES VARIABLES — 7, dupliquées dans les deux thèmes (parité vérifiable) :
+     --sv-bois-1     ton de fond du plateau de table (grain, très mat)
+     --sv-bois-2     reflet plus clair du même bois (veine, chamfer de coin)
+     --sv-bureau     teinte du sous-main du bureau du professeur (.ch-d)
+     --sv-trait      trait des pictogrammes (chaise, silhouette) — contrasté
+     --sv-trait-doux trait des pictogrammes en état calme / effacé
+     --sv-lisere     filet/texture très fine (bord de table, sol de la board)
+     --sv-ombre      profondeur douce, réservée si besoin de relief
+   Aucun nom accentué (compatibilité outillage) : « lisere », pas « liseré ».
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root, :root[data-theme="sombre"]{
+  /* ARDOISE, le soir. Le bois brun a été retiré : sur un fond violet 265°, un
+     grain chaud était la seule chose de tout l'écran qui n'appartenait pas à la
+     famille de teintes — et c'est exactement ce que la palette s'interdit. Le
+     grain reste, la matière change : même violet, deux clartés au-dessus du
+     panneau, donc une texture qu'on devine sans la nommer. Le sous-main du
+     bureau prend le violet saturé de l'accent, à 8 % : c'est le seul endroit du
+     décor qui ait droit à une teinte identifiable. */
+  --sv-bois-1:#211E2C;
+  --sv-bois-2:#2C2839;
+  --sv-bureau:#1A1726;
+  --sv-trait:#CFCADD;
+  --sv-trait-doux:#55506A;
+  --sv-lisere:rgba(0,0,0,.30);
+  --sv-ombre:rgba(0,0,0,.45);
+}
+:root[data-theme="clair"]{
+  /* ARDOISE, le matin. Même logique inversée : le grain descend d'un cran sous
+     le blanc du panneau, le trait passe au violet profond au lieu du crayon
+     brun. Le repère du bureau traverse toujours les deux thèmes — c'est SON
+     invariant — mais en violet très pâle, plus en vert sauge. */
+  --sv-bois-1:#EDEAF5;
+  --sv-bois-2:#F6F4FB;
+  --sv-bureau:#EAE6F7;
+  --sv-trait:#4A4460;
+  --sv-trait-doux:#B2ABC6;
+  --sv-lisere:rgba(26,24,37,.09);
+  --sv-ombre:rgba(26,24,37,.16);
+}
+
+/* ═══════════════════════ îlots de table (.col) ════════════════════════════
+   Le panneau reste var(--panel) — je ne redéclare pas background-color, donc
+   la couleur posée par board.css survit intacte. Je n'ajoute que
+   background-image (grain de bois très mat, deux calques) : à spécificité et
+   ordre de source égaux sur .col, ma déclaration plus tardive l'emporte pour
+   CETTE seule propriété, le reste de la règle de board.css ne bouge pas. */
+.col{
+  position:relative;   /* nécessaire à .col::after (bord de table) */
+  background-image:
+    /* Le grain a été BAISSÉ de 35 % à 22 % et espacé de 34 à 52 px le 01/09.
+       Raison : Ardoise a détaché les cartes du panneau, et une colonne peu
+       remplie expose désormais de grandes surfaces de panneau nu — là où le
+       grain était auparavant couvert par une liste pleine. À l'ancienne
+       densité, la texture cessait de se deviner et se lisait comme un défaut
+       de rendu. Une texture de décor doit rester sous le seuil de la question
+       « c'est un bug ? ». */
+    repeating-linear-gradient(100deg,
+      color-mix(in srgb, var(--sv-bois-2) 22%, transparent) 0 2px,
+      transparent 2px 52px),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--sv-bois-1) 28%, transparent) 0%,
+      transparent 46%);
+}
+
+/* Bord de table : une ombre très fine posée en overlay (pas un enfant flex,
+   donc zéro impact sur la hauteur de .cartes). Coupée en XS — presque rien. */
+.col::after{
+  content:"";
+  position:absolute; left:0; right:0; bottom:0; height:5px;
+  background:linear-gradient(180deg, transparent, var(--sv-lisere));
+  pointer-events:none;
+}
+.board.mode-XS .col::after{ display:none }
+
+/* Plaque de la table = l'en-tête de colonne. Je ne touche ni le filet 2px
+   (border-top:2px solid var(--acc,...)) ni la couleur de .nm : je pose
+   seulement un lavis de bois derrière.
+
+   IL Y AVAIT ICI UN CHAMFER de coin (16x16, coupe nette à 135°). Il a été
+   retiré quand .col est passée au rayon de panneau : posé en haut à gauche de
+   l'en-tête, il tombait exactement dans les 11 px que la courbe du parent
+   découpe. Un biseau vif inscrit dans un congé, ce sont deux langages de coin
+   contradictoires dans les mêmes pixels, et le clip n'en laissait survivre
+   qu'un éclat asymétrique. L'arrondi du panneau dit désormais le coin. */
+.col-hd{
+  position:relative;
+  background-image:linear-gradient(180deg, var(--sv-bois-2) 0%, transparent 72%);
+  box-shadow:inset 0 -1px 0 var(--sv-lisere);
+}
+
+
+/* ═══════════════════════ bureau du professeur (.ch-d) ═════════════════════
+   Aucune propriété de boîte (padding, border en dur, largeur) : la zone
+   droite du bandeau est calculée au pixel près dans board.css (P0 à P7).
+   Je ne pose qu'un fond et une ombre INSET — l'inset ne modifie jamais la
+   taille de la boîte, donc zéro risque sur les paliers documentés. */
+.ch-d{
+  position:relative;
+  /* Rayon de CONTROLE et non de panneau : les deux boutons .theme sont au ras
+     de son bord droit (aucun ecart). A ecart nul, la seule valeur qui ne
+     pince pas est l'egalite avec le rayon de l'enfant. */
+  border-radius:var(--r-ctrl);
+  background-image:linear-gradient(180deg,
+    transparent 0%,
+    color-mix(in srgb, var(--sv-bureau) 65%, transparent) 22%,
+    color-mix(in srgb, var(--sv-bureau) 65%, transparent) 78%,
+    transparent 100%);
+  box-shadow:inset 0 0 0 1px var(--sv-lisere);
+}
+
+/* La board au calme : un sol à peine texturé, uniquement quand rien
+   n'attend — dès qu'une alerte apparaît, board.css reprend seul la main sur
+   la couleur amber, je ne rajoute rien qui puisse la noyer. */
+.attention.calme{
+  background-image:repeating-linear-gradient(90deg,
+    var(--sv-lisere) 0 1px, transparent 1px 46px);
+}
+
+/* ═══════════════════════ le professeur, présent à l'écran ═════════════════
+   Une silhouette minimale (une forme arrondie, aucun visage) posée en tout
+   premier élément de la légende — donc toujours dans le flux normal, jamais
+   en position:absolute : zéro risque de recouvrir un bouton ou un texte
+   fonctionnel, zéro impact sur les calculs de largeur du bandeau. Elle
+   traverse tous les paliers, y compris ceux qui font disparaître
+   « BOARD » : c'est LUI qui reste, jusqu'au bout. */
+.legende::before{
+  content:"";
+  display:inline-block;
+  width:9px; height:15px;
+  background:var(--sv-trait);
+  border-radius:50% 50% 30% 30% / 55% 55% 25% 25%;
+  opacity:.55;
+  flex:none;
+  align-self:center;
+  pointer-events:none;
+}
+
+/* ── LE DÉCOR DES CARTES A ÉTÉ RETIRÉ ─────────────────────────────────────
+   La chaise, le bras leve, la copie posee : tout etait dessine en haut a
+   DROITE de la carte, c'est-a-dire exactement la ou se trouve le chrono. La
+   superposition etait inevitable, et le chrono devenait illisible — surtout sur
+   une carte « a relire », ou il prend la teinte ciel du statut.
+
+   La lecon vaut d'etre gardee : sur une carte dense, il n'y a pas de place
+   libre pour du decor. Le decor de la board survit la ou il y a de l'espace
+   reel — le bois des tables (.col), le bureau du professeur (.ch-d) et la
+   silhouette de la legende. La posture de la session, elle, est deja dite par le
+   glyphe, le bord colore et le libelle : la chaise etait une quatrieme fois la
+   meme information, payee en lisibilite. */

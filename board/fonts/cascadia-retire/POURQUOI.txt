@@ -1,0 +1,8 @@
+Cascadia Code (variable, 4 fichiers, 174 Ko), remplacee par Arial le 2026-08-27
+sur demande. Conservee parce que le depot n'a aucun commit : pas de filet git.
+Ces fichiers ne sont PAS servis — la route /fonts/<fichier> n'ouvre qu'un seul
+niveau, un sous-dossier est hors d'atteinte.
+Retour en arriere : remonter les .woff2 dans board/fonts/, restaurer les quatre
+@font-face dans board/polices.css (voir l'historique de ce fichier), et rendre
+--pile-* a "Cascadia Code" dans board/board.css.
+Licence SIL OFL 1.1 de Microsoft : cascadia-LICENSE.txt, a conserver avec.

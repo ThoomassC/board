@@ -1,0 +1,7 @@
+# état d'exécution et configuration locale : jamais versionnés
+config.json
+state/
+*.log
+__pycache__/
+*.pyc
+.venv/

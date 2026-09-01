@@ -1,0 +1,15 @@
+{
+  "projects": [
+    {"name": "PROJET_A", "root": "~/repos/exemple/ProjetA", "accent": "#4EC9A0"},
+    {"name": "PROJET_B", "root": "~/repos/exemple/ProjetB", "accent": "#D8A657"}
+  ],
+  "fallback_project": "AUTRE",
+  "thresholds": {
+    "ctx_warn": 50, "ctx_crit": 70,
+    "silent_after_s": 90, "aging_after_s": 300, "stale_after_s": 900
+  },
+  "notify": {"enabled": true, "quiet_hours": [22, 8]},
+  "panes": {},
+  "wt_window": "0",
+  "port": 7777
+}

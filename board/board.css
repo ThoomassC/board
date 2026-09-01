@@ -1,0 +1,1278 @@
+/* La board de board — direction ARDOISE, aucune ressource distante.
+
+   PARTI PRIS DE LA COULEUR (choisi le 01/09, en remplacement du graphite bleuté)
+   Tout descend d'UNE SEULE teinte : le violet 265°. Les quatre surfaces
+   (--chrome, --bg, --panel, --card) sont ce violet à saturation quasi nulle, à
+   des clartés croissantes ; l'accent --sky est ce même 265° ramené à pleine
+   saturation. C'est ce qui rend la palette inratable : on ne peut pas
+   désaccorder une couleur avec elle-même. Les pigments d'état sont posés à
+   clarté comparable, à ~120° l'un de l'autre, pour qu'aucun ne pèse plus lourd
+   que les autres à l'œil.
+
+   Règle des canaux (docs/SCHEMA.md), valable dans les deux thèmes :
+     PROJET   -> filet 2px du panneau + titre de colonne. JAMAIS sur une carte.
+     STATUT   -> pastille de libellé + glyphe + bordure de carte + bandeau.
+     CONTEXTE -> uniquement l'intérieur de la piste de jauge. Mat.
+
+   CE QUI A CHANGÉ DANS LES CANAUX, ET POURQUOI. Le statut était porté par un
+   bord gauche de 5 px. Les cartes sont devenues des surfaces autonomes posées
+   avec un écart : un bord gauche sur une carte arrondie et détachée ne se lit
+   plus comme un rail, il se lit comme un défaut d'alignement. Le statut est donc
+   porté par une PASTILLE qui écrit le libellé en clair — le canal gagne au
+   change, puisqu'il passe d'une couleur à interpréter à un mot.
+
+   --sky N'EST PLUS UN PIGMENT D'ÉTAT. Il était à la fois la couleur de
+   « à relire », l'anneau de focus, le liseré de cible, le bouton « reprendre »
+   et l'accent du dialogue d'aide : la couleur de statut était aussi la couleur
+   du chrome, sur un écran où deux cartes sur trois sont en « à relire ».
+   Désormais --sky est l'accent du CHROME et rien d'autre, et « à relire » prend
+   --amber. Conséquence : « bloqué » descend sur --red, et « erreur » partage ce
+   rouge — les deux disent « la conversation est arrêtée, il faut toi », et elles
+   se distinguent par le glyphe (✋ contre ✖), par le mot de la pastille, et par
+   le pouls que seul « bloqué » porte.
+
+   Les deux thèmes définissent le MÊME jeu de variables. Aucune couleur n'est
+   écrite ailleurs que dans ces deux blocs : c'est ce qui garantit qu'aucun
+   élément ne se retrouve avec le texte d'un thème sur le fond de l'autre.
+
+   CONTRASTE, recalculé le 01/09 sur la nouvelle palette. Chaque encre est
+   vérifiée contre les QUATRE fonds de son thème, pas seulement contre --bg.
+   Les 16 combinaisons passent le seuil AA de 4,5:1. Les deux plus justes :
+       clair   --t3 #6E6885 sur --chrome  ->  4,55
+       clair   --red #CC2A48 sur --chrome ->  4,54
+   Le pire cas du thème sombre est --t3/--grey sur --card, à 4,86. Toute
+   nouvelle valeur se revérifie de la même façon. */
+
+:root, :root[data-theme="sombre"]{
+  --chrome:#0B0A11; --bg:#0E0D14; --panel:#17161F; --card:#1D1B27; --line:#2A2837;
+  --t1:#F3F1F9; --t2:#B2ADC6; --t3:#8B86A1;
+  --amber:#FFB84D; --red:#FF6B84; --sky:#8B7CFF; --green:#4ED8A0; --grey:#8B86A1;
+  --edge-off:#332F42;
+  --survol:rgba(255,255,255,.045);
+  --voile:rgba(14,13,20,.7);
+  --acc-txt-mix:100%;              /* accent projet lisible tel quel sur fond sombre */
+  /* Surface d'une carte teintée par son statut, et fond d'une pastille. Deux
+     variables plutôt qu'un color-mix répété quinze fois : le mélange coûte un
+     recalcul par carte et par instantané, soit vingt fois par seconde. */
+  --card-haut:#232130;
+  /* Les ombres sont des VARIABLES DE THÈME : en sombre une ombre noire ne se
+     voit pas, elle se devine, et c'est le liseré clair qui pose la carte. */
+  --ombre:0 1px 2px rgba(0,0,0,.40), 0 10px 26px -14px rgba(0,0,0,.75);
+  --ombre-fine:0 1px 2px rgba(0,0,0,.35);
+  /* Encre de la pastille de comptage des onglets. Elle prend l'accent --sky,
+     ce qui est désormais possible sans ambiguïté : --sky ne signifie plus aucun
+     statut. Texte sombre dessus (contraste 8,1) : sur un violet à cette clarté,
+     du blanc ne passerait pas. */
+  --pastille:#8B7CFF; --pastille-txt:#100E1A;
+  --pastille-bord:rgba(255,255,255,.34);
+}
+:root[data-theme="clair"]{
+  --chrome:#EFEDF6; --bg:#F5F4FA; --panel:#FBFAFD; --card:#FFFFFF; --line:#EAE7F2;
+  --t1:#1A1825; --t2:#54506B; --t3:#6E6885;
+  --amber:#8F5B00; --red:#CC2A48; --sky:#5B45C9; --green:#0B7A50; --grey:#6E6885;
+  --edge-off:#D9D4E6;
+  --survol:rgba(26,24,37,.035);
+  --voile:rgba(245,244,250,.72);
+  --acc-txt-mix:62%;               /* les accents projet sont pensés pour le sombre :
+                                      on les assombrit pour rester lisibles sur blanc */
+  --card-haut:#FAF9FD;
+  --ombre:0 1px 2px rgba(26,24,37,.05), 0 8px 22px -14px rgba(26,24,37,.20);
+  --ombre-fine:0 1px 2px rgba(26,24,37,.05);
+  --pastille:#5B45C9; --pastille-txt:#FFFFFF;   /* blanc dessus : contraste 6,7 */
+  --pastille-bord:rgba(255,255,255,.55);
+}
+
+:root{
+  /* DEUX POLICES, EMBARQUÉES. Voir board/polices.css pour le détail et
+     l'historique : IBM Plex Sans en variable (100 à 700) pour tout ce qui se
+     lit, IBM Plex Mono en 400 et 500 pour tout ce qui s'aligne.
+
+     Les quatre noms sont conservés et gardent l'INTENTION de chaque bloc :
+       --texte / --ui  = ce qui se lit    -> Plex Sans
+       --donnee / --mono = ce qui s'aligne -> Plex Mono
+     Le repli est une pile système complète, parce qu'un board qui n'a pas fini
+     de charger ses polices doit rester lisible : Segoe UI sur ce poste, puis
+     system-ui ailleurs. Les glyphes de statut (✋ ✖ ⋯ ➜ ●) ne sont dans aucun
+     des deux fichiers et tombent volontairement sur Segoe UI Symbol. */
+  --pile-sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,"Liberation Sans",Arial,sans-serif;
+  --pile-mono:"IBM Plex Mono","Cascadia Mono",Consolas,ui-monospace,monospace;
+  --donnee:var(--pile-mono);
+  --mono:var(--pile-mono);
+  --texte:var(--pile-sans);
+  --ui:var(--pile-sans);
+
+  /* ═══ RAYONS ═══════════════════════════════════════════════════════════════
+     Ardoise adoucit tout l'escalier. Le ratio reste le même — un rayon vaut
+     ~25 % de la hauteur de l'élément qui le porte — mais les paliers montent
+     d'un cran et demi : c'est ce qui fait la différence entre « application
+     interne » et « application ». Le facteur ~1,5 entre paliers est conservé,
+     donc « ceci contient cela » se lit toujours : une carte à 14 dans un
+     panneau à 18.
+
+     Ce ne sont PAS des variables de theme : une courbe ne depend pas de la
+     lumiere. Elles vivent donc dans ce :root neutre, hors des deux blocs
+     [data-theme], dont la parite de 21 variables reste intacte et verifiable. */
+  --r-micro:4px;      /* fond pose derriere un fragment de texte, <=18px */
+  --r-puce:8px;       /* etiquette bordee, bouton-icone carre de 20 a 22px */
+  --r-ctrl:11px;      /* CONTROLE : onglet, bouton, champ — 26 a 33px */
+  --r-carte:14px;     /* CARTE : la surface autonome d'une conversation */
+  --r-panneau:18px;   /* PANNEAU : bloc autonome pose sur le fond */
+  --r-dialogue:22px;  /* DIALOGUE : la couche au-dessus */
+  --r-jeton:999px;    /* jeton semantique, pastille, et barre de jauge */
+}
+
+
+/* NOTE, valable pour les quatre feuilles : les reglages font-variant-numeric
+   redeviennent UTILES avec Plex Sans, dont les chiffres proportionnels n'ont pas
+   tous la meme avance — contrairement a Arial, ou ils etaient sans effet. Les
+   colonnes de chiffres (chronos des cartes, jauges) demandent donc bien
+   `tabular-nums`, et les valeurs isolees gardent le proportionnel. Plex Mono,
+   elle, est monospace par construction : le reglage y est redondant, on le
+   laisse pour que la regle survive a un changement de police. */
+
+*{box-sizing:border-box}
+
+/* Les controles de formulaire n'heritent PAS la police : sans cette ligne, un
+   bouton ou un champ oublie retombe sur la police systeme, et c'est exactement
+   la fuite qu'on ne verrait qu'en production. Les regles de classe qui suivent
+   restent gagnantes sur la taille (0,1,0 contre 0,0,1). */
+button,input,select,textarea{font:inherit}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--t1);
+  /* Le corps est en Plex Sans : la prose respire et dispose de trois graisses
+     reelles. Ce qui s'aligne (chronos, jauges, identifiants) passe en Plex Mono,
+     demande regle par regle — jamais par heritage. */
+  font-family:var(--texte); font-size:12.5px; line-height:1.35;
+  overflow:hidden;
+  display:flex; flex-direction:column;
+}
+[hidden]{display:none !important}
+
+/* ═════════════════════ bandeau de compte (chrome) ═══════════════════════════
+   Trois colonnes de grille, QUATRE zones fonctionnelles. La colonne centrale est
+   vraiment centrée, quelle que soit la largeur des deux autres.
+
+       identité  |  navigation  |  quotas | contrôles
+       .ch-g        .onglets       .ch-quotas · .ch-sep · .ch-ctrl
+
+   Le découpage suit la NATURE D'INTERACTION, pas l'histoire du fichier :
+   identité passive, navigation active, données passives, actions ponctuelles.
+   L'ancienne .ch-d mélangeait les deux dernières sans le dire — deux jauges non
+   cliquables et deux boutons partageaient le même écart de 26 px.
+
+   CE QUI SÉPARE, ET POURQUOI PAS AUTRE CHOSE. L'écart fait le travail partout où
+   les éléments se distinguent déjà par leur forme (pilule d'onglet, bouton bordé,
+   lettres espacées du mot-marque). Un seul filet dans toute la barre, entre
+   quotas et contrôles : c'est la SEULE jonction où deux grappes non bordées et de
+   même registre typographique se touchent sans que rien ne dise « ici finit la
+   donnée, ici commence l'action ». Pas de fond par zone : il faudrait une
+   troisième surface, et --panel signifie déjà « onglet sélectionné » dans cette
+   même barre — le réutiliser en fond décoratif brouillerait ce sens.
+
+   La HAUTEUR ne bouge pas : 48 px est la base de tout l'escalier de seuils
+   documenté plus bas. La respiration vient du padding et du départ de l'horloge
+   et de « + projet », pas de pixels verticaux. */
+/* LES ONGLETS NE SONT PLUS CENTRÉS DANS LA FENÊTRE, et c'est la refonte.
+
+   La grille `1fr auto 1fr` rendait les deux pistes latérales JUMELLES : la plus
+   large imposait sa largeur aux deux, donc la gauche — un mot-marque de 71 px —
+   réservait silencieusement autant que la droite chargée de jauges. Un mur de
+   ~480 px de vide à gauche, et chaque pixel ajouté à droite en coûtait deux à
+   la fenêtre. Le fichier le savait déjà : c'est exactement ce que la bascule en
+   deux rangées « rend » à 1415 px (« la rangée 1 ne paie plus le centrage au
+   double »). On cesse simplement de le payer à TOUTES les largeurs.
+
+   Deux groupes, donc : identité + navigation à gauche, données + commandes à
+   droite, et le vide au milieu. La navigation gagne d'être adjacente à la
+   marque plutôt que de flotter au centre — on lit « BOARD › Conversations »,
+   pas trois blocs sans rapport.
+
+   La HAUTEUR ne bouge toujours pas : 48 px reste la base de l'escalier. */
+.chrome{
+  flex:none; background:var(--chrome); border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:14px; padding:0 20px; height:48px;
+  font-family:var(--mono);
+}
+.ch-g{display:flex; align-items:center; gap:9px; min-width:0; flex:none}
+/* `margin-left:auto` pousse la grappe droite au bord : c'est LE ressort qui
+   remplace la piste 1fr disparue, et il ne réserve rien quand il n'y a rien. */
+.ch-d{display:flex; align-items:center; gap:12px; min-width:0;
+      justify-content:flex-end; margin-left:auto; padding-left:10px}
+/* La marque reprend le dessin du favicon, à l'encre du mot-marque. */
+.marque{flex:none; color:var(--t2); display:block}
+.ch-quotas{display:flex; align-items:center; gap:20px; min-width:0}
+/* Le voyant de flux est une DONNÉE (un span, pas un bouton) ; le thème et
+   l'aide sont deux COMMANDES. Un gap uniforme de 12 px les mettait sur le même
+   plan et laissait le voyant se faire absorber par la gravité des boutons
+   voisins. Les deux commandes se serrent à 6 px, le voyant garde ses 12. */
+.ch-ctrl{display:flex; align-items:center; gap:6px; flex:none}
+.ch-ctrl .flux{margin-right:6px}
+/* Le seul filet de la barre. 20 px de haut : il sépare sans faire barrière. */
+.ch-sep{width:1px; height:20px; background:var(--line); flex:none}
+.brand{font-size:11px; font-weight:700; letter-spacing:.18em; color:var(--t2); white-space:nowrap}
+
+/* onglets : adjacents à la marque, et lisibles de loin */
+/* Le calage `position:relative; z-index:1; background` a été RETIRÉ. Il
+   protégeait d'un recouvrement propre à la grille centrée : une zone latérale
+   trop large empiétait sur la cellule du milieu et repeignait les onglets. En
+   flux, deux boîtes ne se superposent jamais — elles débordent. L'assurance
+   n'assurait donc plus rien, et un fond posé sur la barre elle-même est
+   exactement le genre de règle morte qu'on garde vingt ans par prudence.
+   `flex:none` : les onglets ne se rognent pas, c'est la droite qui cède. */
+.onglets{display:flex; gap:6px; flex:none}
+/* La navigation est l'information la plus importante de la barre : c'est elle qui
+   dit ce que l'écran montre en dessous. Elle était pourtant PLUS PETITE que le
+   temps restant d'un quota (14/600 contre 15/700) — la typographie disait le
+   contraire de l'importance. Corrigé en rabaissant .reste, pas en grossissant
+   l'onglet : la barre n'a pas de pixels à donner.
+
+   L'état sélectionné se dit par TROIS signaux simultanés — encre, fond, bordure —
+   et par aucun changement de graisse ni de largeur : Arial n'a que deux graisses,
+   et passer de l'une à l'autre déplacerait l'onglet voisin au clic. Rien ne bouge
+   jamais dans cette barre. */
+.onglet{
+  font-family:var(--ui); font-size:13px; font-weight:600; letter-spacing:.01em;
+  color:var(--t3); background:none; border:1px solid transparent;
+  border-radius:var(--r-jeton);
+  padding:6px 15px; cursor:pointer; white-space:nowrap;
+  display:flex; align-items:center;
+}
+.onglet:hover{color:var(--t1); background:var(--survol)}
+/* L'état sélectionné se dit par la SURFACE, plus par la bordure : une pilule
+   pleine est le seul idiome de sélection qui n'ait pas besoin d'un filet, et
+   Plex Sans permet enfin de renforcer par la graisse sans changer la largeur —
+   600 et 600, seule l'encre bouge. Rien ne se déplace dans cette barre. */
+.onglet[aria-selected="true"]{color:var(--t1); background:var(--card); border-color:var(--line)}
+.onglet:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* limites 5h / 7j */
+.lim{display:flex; align-items:center; gap:11px; font-family:var(--donnee)}
+.lim{cursor:default}
+.lim .lbl{font-family:var(--ui); font-size:10.5px; font-weight:600; letter-spacing:.1em; color:var(--t3)}
+/* La piste est le RESSORT de la zone droite : seule chose qui accepte de se
+   réduire quand la place manque (les libellés sont en nowrap, les compteurs ont
+   leur gouttière en ch). Un dépassement résiduel raccourcit donc une barre au
+   lieu de recouvrir un mot. Plancher 32px : en dessous une jauge ne dit plus rien. */
+.piste{position:relative; width:112px; height:10px; background:var(--line);
+       border-radius:var(--r-jeton); overflow:hidden; flex:0 1 auto; min-width:32px}
+/* Remplissage a bord droit VIF, volontairement : c'est lui qui porte la
+   valeur, et une extremite arrondie la fait paraitre plus courte de r pixels
+   — or cette jauge se compare au repere de rythme. Le bord GAUCHE, lui, est
+   deja adouci par la pilule du parent via son overflow:hidden. Mesure : sur
+   la piste la plus courte (60px, palier 1560), un quota a 3 % conserve 77 %
+   de la hauteur — la calotte ne mange pas la donnee. */
+.piste i{position:absolute; inset:0 auto 0 0; border-radius:0;
+         transition:width .3s linear, background-color .25s}
+/* ── LE REPÈRE DE RYTHME, ET POURQUOI IL SORT DE LA PISTE ─────────────────────
+   Une tentative précédente posait `top/bottom:-2px` À L'INTÉRIEUR de .piste ; le
+   `overflow:hidden` du parent la rognait, et le commentaire d'alors concluait
+   « du code qui mentait ». La bonne réponse n'était pas de renoncer, c'était de
+   changer de parent — d'où le nouveau .jauge, qui ne rogne rien.
+
+   La raison est mesurée, pas esthétique. Le repère traverse DEUX fonds très
+   différents : le remplissage, vif, et la piste vide, sombre. Aucune couleur
+   unique ne peut contraster avec les deux — contrastes du 27/08, pires des
+   quatre fonds de piste (seuil 3:1, WCAG 1.4.11 pour un composant graphique) :
+
+       thème sombre   --t2 : 1,03  ·  --t1 : 1,73  ·  --chrome : 1,49   TOUS ÉCHOUENT
+       thème clair    --t2 : 1,40  ·  --t1 : 3,19  ·  --chrome : 1,13
+
+   À 1,03:1 sur le remplissage vert, l'ancien repère était littéralement
+   invisible — et c'est, de l'aveu de l'aide de cet écran, LE seul signal utile
+   du bloc quotas. L'épaissir n'y changeait rien : c'était la couleur qui était
+   fausse, et aucune ne pouvait l'être moins.
+
+   En débordant de 3 px de part et d'autre, le repère repose sur le fond de la
+   barre, où --t1 donne 16,63:1 en sombre et 14,21:1 en clair. Le signal est
+   porté par les deux ergots qui encadrent la piste ; le segment qui la traverse
+   n'est plus qu'un rappel. */
+.jauge{position:relative; display:flex; flex:0 1 auto; min-width:0}
+.jauge .rythme{
+  position:absolute; top:-3px; bottom:-3px; width:2px;
+  background:var(--t1); border-radius:1px; pointer-events:none;
+}
+/* TROIS ÉLÉMENTS PAR JAUGE, ET PAS CINQ. Le seul signal utile de ce bloc est
+   « le remplissage dépasse-t-il le repère de rythme ? » — l'aide de l'écran le
+   dit elle-même — et ce signal est déjà porté par la COULEUR du remplissage
+   (board.js). Il coexistait avec quatre textes qui ne l'expriment pas et lui
+   faisaient concurrence : le bloc le plus dense de la barre servait sa donnée la
+   moins actionnable.
+   Restent : le nom, la piste, le temps restant. Le pourcentage exact et l'heure
+   de réinitialisation passent dans le title de .lim — même parti que les jetons
+   git de la carte, qui ne portent leur détail qu'en infobulle. Rien n'est perdu,
+   tout est à portée de curseur, et les lecteurs d'écran lisent le title.
+
+   Valeur isolée, pas une colonne : chiffres proportionnels. La largeur est
+   réservée en ch et le texte ferré à droite, donc la barre ne bouge pas quand
+   la valeur change — sans imposer la largeur d'un « 0 » à chaque chiffre. */
+.lim .reste{font-family:var(--donnee); font-size:12px; font-weight:500; color:var(--t2); min-width:6ch; text-align:right}
+.lim .reste.urgent{color:var(--amber)}
+/* « SESSION NEUVE » est le seul contenu de .reste qui n'est pas un compteur :
+   13 signes là où la gouttière en réserve 5,5. Non traité, il pousse toute la
+   zone droite sur les onglets — et comme les deux pistes de la grille sont
+   jumelles, chaque pixel gagné ici compte double. On l'abrège à l'affichage ; le
+   texte complet reste dans le DOM pour les lecteurs d'écran. La réserve est
+   reportée sur le pseudo-élément : 6ch à 13px = 6,5ch à 12px, l'unité ch suivant
+   la taille de SON élément. Recalculé le 27/08 quand .reste est passé de 15 à
+   13 px ; laisser 6,875ch aurait réservé 5 px de trop, donc 10 px de fenêtre, la
+   piste droite comptant double. Aucun sautillement au changement d'état.
+   Si board.js renvoie un jour « NEUVE », ce bloc rend la même chose. */
+.lim .reste.neuve{color:var(--green); font-size:0; letter-spacing:0}
+.lim .reste.neuve::after{
+  content:"NEUVE"; font-size:12px; letter-spacing:.08em;
+  display:inline-block; min-width:6.5ch; text-align:right;
+}
+
+/* fraîcheur du flux : un point qui bat, et l'âge */
+.flux{display:flex; align-items:center; gap:7px; font-size:11px; color:var(--t2); font-family:var(--donnee)}
+.flux b{width:7px; height:7px; border-radius:50%; background:var(--green); flex:none}
+.flux span{min-width:3.5ch; text-align:right}
+.flux.vieux{color:var(--amber)} .flux.vieux b{background:var(--amber)}
+
+/* bouton thème */
+/* ── LES DEUX BOUTONS, ET LA RÈGLE QU'ILS ENFREIGNAIENT ───────────────────────
+   Ils portaient la SEULE bordure permanente de tout le chrome. Or cette barre
+   s'est déjà donné la règle inverse, deux fois : `.onglet` naît en
+   `border:1px solid transparent` et ne montre sa bordure qu'à la sélection, et
+   `.jeter` (la poubelle d'une carte) fait exactement pareil au survol. Une
+   bordure de contrôle SE MÉRITE PAR L'ÉTAT, elle ne se porte pas au repos.
+
+   Pire : la bordure permanente est déjà le vocabulaire d'autre chose dans cette
+   même barre — `.onglet .pastille`, capsule bordée en permanence, encre neutre,
+   qui porte un COMPTEUR. Les deux boutons avaient donc emprunté, par accident,
+   la grammaire des jetons de donnée alors que ce sont des commandes. C'est
+   exactement ce qui les faisait lire comme « des boutons posés dessus » : deux
+   rectangles contourés au milieu de formes qui ne le sont jamais.
+
+   La bordure transparente réserve sa place : rien ne bouge au survol. */
+.theme{
+  font-family:var(--mono); font-size:14px; line-height:1; color:var(--t2);
+  background:none; border:1px solid transparent; border-radius:var(--r-ctrl);
+  width:30px; height:28px; display:grid; place-content:center; cursor:pointer;
+}
+.theme:hover{color:var(--t1); background:var(--panel); border-color:var(--line)}
+.theme:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ── LA BASCULE DE THÈME, DESSINÉE ────────────────────────────────────────────
+   Les glyphes ☾ (U+263E) et ☀ (U+2600) sont ABSENTS d'Arial — mesuré sur ce
+   poste. Ils étaient rendus par une police de repli, donc au poids et à la
+   chasse d'une police que rien d'autre dans l'écran n'utilise : le seul bouton
+   à pictogramme de la barre était aussi le seul dont on ne maîtrisait pas le
+   dessin. Le « ? » de l'aide, lui, est natif Arial : il reste.
+
+   Un rail et un curseur reprennent la grammaire déjà présente — la capsule de
+   la piste de jauge et le cercle du voyant de flux. La zone droite passe donc
+   de trois familles de formes sans palier à deux, et un commutateur dit ce
+   qu'un croissant de lune ne disait pas : que ça a deux positions.
+
+   Aucune ligne de JS : `data-theme` est déjà posé sur la racine par poseTheme,
+   il pilote directement la position du curseur. */
+.bascule .rail{
+  position:relative; display:block; width:20px; height:11px;
+  border-radius:var(--r-jeton); background:var(--line);
+}
+.bascule .rail::after{
+  content:""; position:absolute; top:1px; left:1px;
+  width:9px; height:9px; border-radius:50%; background:currentColor;
+  transition:left .18s ease-out;
+}
+:root[data-theme="sombre"] .bascule .rail::after{left:10px}
+@media (prefers-reduced-motion:reduce){
+  .bascule .rail::after{transition:none}
+}
+
+/* ═════════════════ adopter un projet détecté ═════════════════════════════════
+   Remplace le bouton « + projet » de la barre, supprimé le 27/08. Il vivait à
+   côté du mot-marque, sans lien avec rien de ce que l'écran montrait, et il était
+   le SEUL moyen de déclarer un projet — alors que l'endroit où le manque se voit
+   est la colonne de repli, tout en bas à droite du board.
+
+   La bordure POINTILLÉE est l'idiome hérité de l'ancien `.plus` et elle dit la
+   bonne chose : « une place possible, pas encore une place ». Encre neutre
+   exclusivement — un projet non déclaré n'est pas une alerte, et le canal STATUT
+   reste libre pour ce qu'il désigne. */
+.adopt{
+  display:flex; flex-direction:column; gap:5px;
+  padding:8px 9px 9px; margin:0 0 9px;
+  border:1px dashed var(--line); border-radius:var(--r-panneau);
+}
+.adopt-t{display:flex; align-items:baseline; gap:6px; padding:0 2px 1px}
+.adopt-t b{font-size:12px; font-weight:700; color:var(--t2); font-variant-numeric:tabular-nums}
+.adopt-t span{font-size:10.5px; color:var(--t3); letter-spacing:.04em}
+.adopt-l{
+  display:grid; grid-template-columns:minmax(0,1fr); gap:1px;
+  font-family:var(--mono); text-align:left; cursor:pointer;
+  background:none; border:1px solid transparent; border-radius:var(--r-ctrl);
+  padding:5px 7px; color:inherit;
+}
+.adopt-l b{font-size:12px; font-weight:700; color:var(--t2); letter-spacing:.04em}
+.adopt-l span{font-size:10.5px; color:var(--t3); overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap}
+.adopt-l em{font-size:10.5px; font-style:normal; color:var(--t3)}
+.adopt-l:hover{background:var(--card); border-color:var(--line)}
+.adopt-l:hover b{color:var(--t1)}
+.adopt-l:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ═════════════════════ bandeau d'attention ════════════════════════════════ */
+/* LA HAUTEUR EST FIXE, 40 px, dans les deux régimes — et ce n'est pas un détail.
+   Aucune des media queries qui touchent cette classe ne change sa hauteur : c'est
+   un invariant du fichier, y compris à travers tout l'escalier responsive. La
+   faire varier avec le contenu ferait monter et descendre TOUT le plateau de
+   cartes à chaque bascule calme↔alerte — or cette bascule n'est pas un geste de
+   l'utilisateur, c'est un événement serveur, et « les places sont fixes » est la
+   doctrine de cet écran. Techniquement, en plus : rendAttention() reconstruit son
+   contenu à chaque message SSE, soit environ une fois par seconde, donc une
+   hauteur dépendant du contenu reflowerait la page à ce rythme. Pour la même
+   raison, aucune transition ni animation ici : elle se rejouerait en boucle sans
+   qu'aucun état n'ait changé. La seule animation continue de l'écran reste le
+   pouls de la carte bloquée.
+
+   LE FOND SUIT LA GRAVITÉ MAXIMALE PRÉSENTE, et rien d'autre. Il était ambre en
+   permanence — « ton action est attendue » — même quand la liste ne contenait que
+   du travail livré à relire. Le mapping reprend exactement la restriction que
+   l'écran s'est déjà donnée pour les cartes (TEINTE = {blocked, error}) : seuls
+   ces deux états teintent une surface. `silent` et `review` restent sur fond
+   neutre, leur pigment porté par le glyphe de chaque bouton. Étendre la teinte
+   aux quatre états diluerait l'ambre et le rouge sur des cas qui ne les méritent
+   pas. Le mix reste à 10 %/26 % : plus fort, il concurrencerait le voile
+   « FLUX PERDU », qui est une gravité d'un autre ordre. */
+.attention{
+  flex:none; display:flex; align-items:center; gap:26px; padding:0 18px; height:40px;
+  background:var(--bg); border-bottom:1px solid var(--line);
+  overflow:hidden; font-family:var(--mono); font-size:13px;
+}
+.attention.grave{
+  background:color-mix(in srgb,var(--amber) 10%,var(--bg));
+  border-bottom-color:color-mix(in srgb,var(--amber) 26%,var(--line));
+}
+.attention.casse{
+  background:color-mix(in srgb,var(--red) 10%,var(--bg));
+  border-bottom-color:color-mix(in srgb,var(--red) 26%,var(--line));
+}
+.attention.calme{color:var(--t3)}
+/* Déplié sur un geste : la bande défile plutôt que de grandir. */
+.attention.tout{overflow-x:auto; overflow-y:hidden; scrollbar-width:thin}
+.att{
+  display:flex; align-items:center; gap:8px; white-space:nowrap;
+  background:var(--card); border:1px solid var(--line); color:inherit;
+  font:inherit; cursor:pointer;
+  padding:4px 12px 4px 10px; border-radius:var(--r-jeton);
+}
+.att:hover{background:var(--card-haut); border-color:var(--edge-off)}
+.att:focus-visible{outline:2px solid var(--sky); outline-offset:1px}
+.att b{font-family:var(--ui); font-weight:600}
+.att .d{color:var(--t3)}
+/* Un vrai bouton, avec les états interactifs de .att : il était un <span> sans
+   clic, sans survol et non focusable au clavier — un texte qui ressemble à une
+   troncature et promet une action qu'il ne tient pas. */
+.att-plus{
+  flex:none; white-space:nowrap; font:inherit; font-size:12px; cursor:pointer;
+  background:none; border:0; color:var(--t2);
+  padding:4px 8px; border-radius:var(--r-ctrl);
+}
+.att-plus:hover{background:var(--survol); color:var(--t1)}
+.att-plus:focus-visible{outline:2px solid var(--sky); outline-offset:1px}
+
+/* Indice tertiaire du régime alerte, et RIEN D'AUTRE. Cette classe portait
+   aussi le message du régime calme : c'est de là que venait tout le problème. */
+.att-aide{margin-left:auto; color:var(--t3); font-size:11.5px; white-space:nowrap}
+
+/* ── LE MESSAGE DU RÉGIME CALME ───────────────────────────────────────────────
+   15 px / 700 / --t1, ferré à gauche. La taille se situe entre le chiffre de
+   quota (13 px / 700) et l'identifiant de carte (17 px / 700), qui est la seule
+   preuve interne de ce qui se lit à deux mètres dans ce produit. Pas
+   d'interlettrage : dans tout ce fichier il est réservé aux libellés courts en
+   capitales, jamais aux phrases. Encre --t1, parce que ce message n'est pas
+   secondaire par rapport à quelque chose d'autre affiché à côté — à cet instant,
+   il EST la barre.
+
+   AUCUNE COULEUR, et c'est un choix, pas un oubli. Le vert est verrouillé par la
+   règle des canaux à l'intérieur de la piste de jauge, et il n'est pas un pigment
+   d'état. Or « tout va bien » se dit déjà, dans ce produit, par l'ABSENCE de
+   couleur : « ● au travail — sans couleur, à dessein : il n'y a rien à faire ».
+   Le régime calme est à l'écran ce que `working` est à une carte. */
+.att-msg{
+  font-family:var(--ui); font-size:15px; font-weight:600; color:var(--t1);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ═════════════════════ colonnes projet ═══════════════════════════════════ */
+.board{flex:1; min-height:0; display:grid; gap:14px; padding:14px;
+       align-content:start; overflow:hidden;
+       /* posée par board.js selon le nombre de projets ouverts */
+       grid-template-columns:var(--cols,none)}
+.board.vide{place-content:center; color:var(--t3)}
+.col{background:var(--panel); border:1px solid var(--line); border-radius:var(--r-panneau);
+     box-shadow:var(--ombre);
+     display:flex; flex-direction:column; min-width:0; overflow:hidden}
+.col.glisse{opacity:.4}
+.col.cible{outline:2px dashed var(--sky); outline-offset:-2px}
+.col-hd{
+  flex:none; display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:11px 14px 10px; border-top:2px solid var(--acc,var(--line));
+  border-bottom:1px solid var(--line); cursor:grab; user-select:none;
+}
+.col-hd:active{cursor:grabbing}
+.col-hd .nm{
+  font-size:12.5px; font-weight:600; letter-spacing:.13em;
+  color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+}
+/* Le compteur devient un jeton : il se lit comme un nombre posé, pas comme une
+   suite du nom de projet. Encre neutre — un compteur n'est pas un statut. */
+.col-hd .ct{
+  font-size:10.5px; font-weight:500; color:var(--t3); white-space:nowrap;
+  font-family:var(--donnee); font-variant-numeric:tabular-nums;
+  background:var(--card); border:1px solid var(--line);
+  padding:2px 8px; border-radius:var(--r-jeton);
+}
+/* LE SOCLE A DISPARU. Il valait le rayon du panneau et protégeait la courbe
+   basse de .col : la dernière carte, collée aux bords, se faisait mordre le
+   coin. Les cartes sont désormais des surfaces autonomes posées AVEC un écart —
+   le padding de .cartes les tient à 8 px de chaque bord, donc rien ne peut plus
+   toucher la courbe, et le socle ne protégeait plus que du vide. */
+.cartes{flex:1; min-height:0; display:flex; flex-direction:column; gap:8px;
+        overflow-y:auto; padding:8px}
+
+/* ═════════════════════ carte session ═══════════════════════════════════════
+   ARDOISE : la carte n'est plus une ligne de liste séparée par un filet, c'est
+   une SURFACE AUTONOME posée sur le panneau. Trois conséquences tranchées :
+
+   1. LE STATUT PASSE DU BORD À LA PASTILLE. Un bord gauche de 5 px sur une
+      carte arrondie et détachée ne se lit plus comme un rail : il se lit comme
+      un défaut d'alignement. Le libellé écrit en clair dans une pastille teintée
+      dit la même chose sans demander de traduction — et il reste lisible pour
+      qui ne distingue pas l'ambre du rouge.
+   2. LE TITRE PASSE DEVANT L'IDENTIFIANT. C'était D1 de docs/AMELIORATIONS.md,
+      mesuré le 26/08 : le champ le plus gros de la carte affichait « ProjetA »,
+      c'est-à-dire le nom déjà écrit en en-tête de colonne, tandis que la seule
+      information qui distingue deux conversations — le titre — était en 13,5 px
+      gris. La typographie disait exactement le contraire de l'information.
+      Ardoise l'exige de toute façon : une carte à surface propre a besoin d'une
+      première ligne qui porte.
+   3. LE HACHURAGE RESTE. « oubliée ? » n'est pas un statut, c'est un doute sur
+      la fraîcheur de la donnée : il garde sa trame, qui ne ressemble à aucun
+      pigment.
+
+   La grille reste à DEUX colonnes (contenu | chrono) : c'est elle que les
+   requêtes de conteneur, plus bas, replient à 210 px de large. */
+.carte{
+  position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto;
+  gap:2px 12px; padding:12px 13px 11px;
+  background:var(--card); border:1px solid var(--line);
+  border-radius:var(--r-carte); box-shadow:var(--ombre-fine);
+  cursor:pointer;
+  transition:border-color .18s ease-out, background-color .18s ease-out,
+             box-shadow .18s ease-out, transform .18s ease-out;
+}
+.carte:hover{border-color:var(--edge-off); box-shadow:var(--ombre); transform:translateY(-1px)}
+.carte:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+.carte.glisse{opacity:.4}
+.carte.cible{box-shadow:inset 0 2px 0 var(--sky)}
+/* TEINTE reste restreinte à {blocked, error} : seuls les deux états qui exigent
+   un acte colorent une surface. `review` et `silent` se contentent de leur
+   pastille — étendre la teinte aux quatre diluerait les deux qui comptent. */
+.carte.teinte{
+  background:var(--card-haut);
+  border-color:color-mix(in srgb,var(--edge,var(--edge-off)) 45%,var(--line));
+}
+/* « à relire » : la bordure seule, sans teinte de fond. Un cran en dessous. */
+.carte.review{border-color:color-mix(in srgb,var(--amber) 30%,var(--line))}
+.carte.vu{opacity:.85}
+
+/* ── première ligne : le glyphe, le titre, la PR ─────────────────────────── */
+.l1{display:flex; align-items:baseline; gap:9px; min-width:0}
+.gl{font-size:13px; color:var(--edge,var(--t3)); flex:none; width:1.2em}
+/* LE TITRE. 15 px / 600 — Plex Sans a une vraie graisse 600, ce qu'Arial
+   n'avait pas : le titre et sa ligne technique ne peuvent plus se confondre.
+   Une seule ligne, coupée à l'ellipse : contrairement à l'identifiant, un titre
+   n'a pas besoin de passer en entier — sa fonction est de distinguer, et les
+   quarante premiers signes distinguent. */
+.titre{
+  flex:1; min-width:0; font-family:var(--ui); font-size:15px; font-weight:600;
+  letter-spacing:-.015em; color:var(--t1);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* Les chronos des cartes forment une colonne verticale d'une carte à l'autre :
+   le tabulaire est ici légitime, et il empêche la colonne de respirer quand un
+   compteur passe de 9m à 10m. Plex Mono le fait par construction. */
+.chrono{
+  font-family:var(--donnee); font-variant-numeric:tabular-nums;
+  font-size:15px; font-weight:500; color:var(--t2);
+  text-align:right; min-width:5.4ch; white-space:nowrap; align-self:baseline;
+}
+.carte.age .chrono{color:var(--edge,var(--t2))}
+
+/* ── l'identifiant, rétrogradé mais pas supprimé ─────────────────────────── */
+/* En mono 11 px : c'est une donnée technique (nom de worktree, n° d'US), pas de
+   la prose. Le jour où les conversations partiront des worktrees, il redeviendra
+   porteur — et le repromouvoir sera une bascule de deux lignes, pas une
+   refonte. */
+.id{
+  grid-column:1/-1; font-family:var(--donnee); font-size:11px; font-weight:400;
+  color:var(--t3); letter-spacing:-.01em;
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.meta{grid-column:1/-1; font-size:11.5px; color:var(--t3);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.hachure{background:repeating-linear-gradient(135deg,transparent 0 3px,
+         color-mix(in srgb,var(--grey) 45%,transparent) 3px 4px);
+         padding:0 4px; border-radius:var(--r-micro)}
+.dit{grid-column:1/-1; font-family:var(--ui); font-size:12px; font-style:italic;
+     color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+/* ── dernière ligne : la pastille d'état, puis la jauge ──────────────────── */
+/* .bas existe pour UNE raison : la pastille doit survivre à la disparition de
+   la jauge. `ctx.hidden = true` dès que ctx_pct est nul (une session sans
+   statusline rendue), et une pastille rangée dans .ctx disparaîtrait avec elle —
+   la carte perdrait son état, c'est-à-dire l'essentiel. */
+.bas{grid-column:1/-1; display:flex; align-items:center; gap:10px;
+     margin-top:8px; padding-right:24px}
+.pill{
+  flex:none; font-family:var(--ui); font-size:10px; font-weight:600;
+  letter-spacing:.07em; text-transform:uppercase; white-space:nowrap;
+  padding:3px 9px; border-radius:var(--r-jeton);
+  color:var(--edge,var(--t3));
+  background:color-mix(in srgb,var(--edge,var(--edge-off)) 16%,transparent);
+}
+.ctx{flex:1; display:flex; align-items:center; gap:9px; min-width:0}
+.ctx-tr{position:relative; flex:1; height:5px; background:var(--line);
+        border-radius:var(--r-jeton); overflow:hidden}
+.ctx-tr i{position:absolute; inset:0 auto 0 0; border-radius:var(--r-jeton);
+          transition:width .25s linear, background-color .25s}
+.ctx-tr u{position:absolute; top:0; bottom:0; width:1px; background:var(--card); opacity:.95}
+.ctx-n{font-family:var(--donnee); font-variant-numeric:tabular-nums;
+       font-size:10.5px; color:var(--t3); min-width:4ch; text-align:right}
+
+/* BLOQUÉ : la seule animation continue de tout l'écran. */
+@keyframes pouls{0%,100%{opacity:1}50%{opacity:.45}}
+.carte.blocked:not(.vu) .pill{animation:pouls 2s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  /* Sans mouvement, le pouls devient un anneau : le bord gauche de 7 px qui
+     jouait ce rôle n'existe plus. */
+  .carte.blocked:not(.vu) .pill{animation:none}
+  .carte.blocked:not(.vu){box-shadow:0 0 0 2px color-mix(in srgb,var(--red) 55%,transparent)}
+  .carte:hover{transform:none}
+  *{transition:none !important}
+}
+
+/* poubelle : gouttière réservée en permanence, donc zéro décalage */
+.jeter{
+  position:absolute; right:7px; bottom:8px; width:21px; height:21px;
+  display:grid; place-content:center; padding:0;
+  background:none; border:1px solid transparent; border-radius:var(--r-puce);
+  color:var(--t3); font:inherit; font-size:12px; line-height:1;
+  cursor:pointer; opacity:0; transition:opacity .12s;
+}
+.carte:hover .jeter,.carte:focus-within .jeter{opacity:1}
+.jeter:hover{color:var(--t1); border-color:var(--line); background:var(--panel)}
+.jeter:focus-visible{opacity:1; outline:2px solid var(--sky); outline-offset:1px}
+
+/* ═════════════════════ densités ══════════════════════════════════════════
+   L'ORDRE DE SACRIFICE EST INVERSÉ, et c'était D2 de docs/AMELIORATIONS.md.
+   L'ancien palier XS cachait `.titre` : à vingt conversations sur deux projets,
+   il restait dix cartes affichant toutes le même identifiant de dépôt. Le jour
+   où le board est le plus utile était le jour où il devenait illisible — et la
+   mesure disait qu'il restait de la place (dix cartes XS ≈ 480 px dans une
+   colonne qui en offre ~920).
+
+   Nouvel ordre : part d'abord le chiffre de contexte (la jauge reste, elle se
+   lit sans son nombre), puis la phrase, puis la méta, puis l'identifiant.
+   `.titre` ne part JAMAIS. */
+.board.mode-L{grid-auto-flow:column; grid-auto-columns:minmax(0,560px); justify-content:start}
+.board.mode-S .dit,.board.mode-XS .dit{display:none}
+.board.mode-S .meta,.board.mode-XS .meta{display:none}
+.board.mode-S .titre{font-size:14px}
+.board.mode-S .chrono{font-size:14px}
+.board.mode-S .carte{padding:10px 12px 10px}
+.board.mode-S .bas{margin-top:6px}
+.board.mode-XS .ctx-n{display:none}
+.board.mode-XS .id{display:none}
+.board.mode-XS .carte{padding:8px 11px 9px}
+.board.mode-XS .titre,.board.mode-XS .chrono{font-size:13px}
+.board.mode-XS .bas{margin-top:5px}
+.board.mode-XS .cartes{gap:6px; padding:6px}
+/* ═════════════════════ historique ════════════════════════════════════════ */
+.histo{flex:1; min-height:0; overflow-y:auto; padding:16px 18px 48px}
+/* `.h-note` a été retiré le 27/08, comme `.ch-note` avant lui : cinq lignes de
+   prose en tête de liste, relues tous les jours pour rien — et reconstruites à
+   chaque frappe dans le filtre. Le contenu vit dans le dialogue d'aide, section
+   « L'onglet Historique », où le bouton `?` de la barre de filtre mène.
+
+   ── LE BOUTON D'AIDE PAR ONGLET ───────────────────────────────────────────────
+   Un seul idiome pour les deux onglets qui en ont un, et il vit ici plutôt que
+   dans une feuille d'onglet : c'est un élément de chrome, pas de contenu. Encre
+   neutre obligatoire — un bouton d'aide est un contrôle, il ne porte aucun
+   pigment de statut. Tous mènent au même dialogue, sur leur ancre : un seul
+   endroit où chercher, une seule rédaction à maintenir. */
+.aide-onglet{
+  flex:none; width:22px; height:22px; display:grid; place-content:center;
+  font-family:var(--mono); font-size:12px; line-height:1; cursor:pointer;
+  color:var(--t3); background:none;
+  border:1px solid var(--line); border-radius:var(--r-puce);
+}
+.aide-onglet:hover{color:var(--t1); background:var(--card); border-color:var(--t3)}
+.aide-onglet:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+.h-grp{margin-bottom:30px}
+.h-hd{display:flex; align-items:center; gap:12px; padding:0 0 8px;
+      border-bottom:1px solid var(--line); margin-bottom:3px}
+.h-hd .nm{font-size:13px; font-weight:700; letter-spacing:.14em;
+          color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000)}
+.h-hd .ct{font-size:11.5px; color:var(--t3)}
+.h-row{
+  display:grid; grid-template-columns:9ch minmax(0,2fr) minmax(0,1.5fr) auto 8ch 26px;
+  gap:16px; align-items:baseline; padding:8px 2px;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
+}
+.h-row:hover{background:var(--survol)}
+.h-row .hdate{font-family:var(--donnee); font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--t3); white-space:nowrap}
+.h-row .ht{font-family:var(--ui); font-size:13px; color:var(--t1);
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.h-row .hp{font-family:var(--ui); font-size:12px; color:var(--t3); font-style:italic;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.h-row .hus{display:flex; gap:5px; justify-content:flex-end}
+.h-row .hus b{font-family:var(--donnee); font-weight:600; font-size:11px; color:var(--t2);
+              border:1px solid var(--line); border-radius:var(--r-puce); padding:1px 6px; white-space:nowrap}
+.h-row .hm{font-family:var(--donnee); font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--t3); text-align:right}
+.h-row .hact{display:flex; justify-content:flex-end; gap:4px}
+.reprendre{
+  width:22px; height:22px; display:grid; place-content:center; padding:0;
+  background:var(--panel); border:1px solid var(--sky); border-radius:var(--r-puce);
+  color:var(--sky); font:inherit; font-size:12px; line-height:1; cursor:pointer;
+}
+.reprendre:hover{background:var(--sky); color:var(--panel)}
+.reprendre:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+.h-row.arch{background:color-mix(in srgb,var(--grey) 7%,transparent)}
+.h-row.arch .ht{color:var(--t3); font-style:italic}
+.h-row.arch .hdate::before{content:"⌫ "; color:var(--t3)}
+.h-vide{color:var(--t3); padding:44px 0; text-align:center}
+
+/* ═════════════════════ légende + voile ═══════════════════════════════════ */
+.legende{
+  flex:none; display:flex; flex-wrap:wrap; gap:7px 22px; padding:10px 18px;
+  border-top:1px solid var(--line); background:var(--chrome);
+  font-size:11px; color:var(--t3);
+}
+.legende span{display:flex; align-items:center; gap:7px}
+/* 2px, HORS de l'echelle et a dessein : cet echantillon est le portrait du
+   filet STATUT de 5px, qui a des bouts droits. L'arrondir, ce serait
+   legender une chose par une autre. Ne pas le passer en var(--r-*). */
+.legende i{width:9px; height:9px; border-radius:3px; display:inline-block}
+.legende .fin{margin-left:auto}
+
+#voile{position:fixed; inset:0; display:none; place-content:center; z-index:50;
+       background:var(--voile); backdrop-filter:saturate(.35)}
+body.perdu #voile{display:grid}
+body.perdu .board,body.perdu .histo{opacity:.4}
+#voile div{font-size:14px; font-weight:700; letter-spacing:.18em; color:var(--amber);
+           border:1px solid var(--amber); border-radius:var(--r-panneau); padding:14px 26px;
+           background:var(--chrome)}
+
+/* ═════════════════════ dialogue nouveau projet ═══════════════════════════ */
+dialog#nouveau{
+  border:1px solid var(--line); border-radius:var(--r-dialogue); background:var(--panel);
+  color:var(--t1); padding:0; width:min(540px,92vw); font-family:var(--mono); font-size:12.5px;
+}
+dialog#nouveau::backdrop{background:var(--voile)}
+#nouveau h2{border-radius:calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px) 0 0;
+            margin:0; padding:14px 18px; font-size:12.5px; font-weight:700; letter-spacing:.14em;
+            border-bottom:1px solid var(--line); background:var(--chrome); color:var(--t2)}
+#nouveau .corps{padding:18px; display:grid; gap:14px}
+#nouveau label{display:grid; gap:6px; font-size:11.5px; color:var(--t3)}
+#nouveau input{font-family:var(--mono); font-size:13px; color:var(--t1);
+               background:var(--bg); border:1px solid var(--line); border-radius:var(--r-ctrl); padding:8px 10px}
+#nouveau input:focus{outline:none; border-color:var(--sky)}
+#nouveau .aide{font-size:11px; color:var(--t3); line-height:1.65; margin:0}
+#nouveau .aide code{color:var(--t2)}
+#nouveau .msg{font-size:11.5px; color:var(--amber); min-height:1.4em; margin:0}
+#nouveau .msg.ok{color:var(--green)}
+#nouveau .pieds{border-radius:0 0 calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px);
+                display:flex; justify-content:flex-end; gap:10px;
+                padding:14px 18px; border-top:1px solid var(--line); background:var(--chrome)}
+#nouveau button{font-family:var(--mono); font-size:12px; cursor:pointer; border-radius:var(--r-ctrl);
+                padding:7px 16px; border:1px solid var(--line); background:var(--card); color:var(--t2)}
+#nouveau button:hover{color:var(--t1)}
+#nouveau button.primaire{border-color:var(--sky); color:var(--sky)}
+#nouveau button:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ═════════════════════ LE BANDEAU SOUS CONTRAINTE ════════════════════════════
+
+   POURQUOI ÇA DÉBORDAIT
+   `grid-template-columns:1fr auto 1fr` centre VRAIMENT le centre : les deux
+   pistes latérales sont jumelles, elles font toujours la même largeur. Le prix
+   d'un vrai centrage n'est donc pas gauche + droite, c'est 2 × max(gauche,droite).
+   Largeurs minimales calculées avec une avance mono prise par excès à 0,6 em :
+
+       zone gauche  296 px    onglets (3)  393 px    zone droite  789 px
+
+   soit 36 (padding) + 40 (2 gaps) + 393 + 2 × 789 = 2047 px de fenêtre pour tout
+   afficher.
+
+   CE CALCUL EST DEVENU MAJORANT, ET C'EST TANT MIEUX. Depuis, le board est passé
+   au monospace Cascadia (0,586 em) puis à Arial. Arial est proportionnelle : ses
+   majuscules sont PLUS larges que le mono supposé (0,677 em, mesuré sur
+   arial.ttf), mais ses minuscules bien plus étroites (0,490 em), et les libellés
+   longs du bandeau — « Pull Requests », « Historique », « + projet » — sont en
+   minuscules. Recalculé sur les métriques réelles d'Arial :
+
+       zone gauche  274 px    onglets (3)  370 px    zone droite  756 px  →  1959 px
+
+   soit 128 px de moins que l'hypothèse. Les sept paliers ci-dessous n'ont donc
+   pas été retouchés : ils déclenchent un peu tôt, jamais trop tard. Si une police
+   à majuscules larges ET libellés courts arrivait un jour, il faudrait refaire ce
+   calcul — c'est le seul endroit du fichier qui dépend de la police choisie. À 1920 la piste droite reçoit 725 px pour 789 px de contenu. .ch-d a
+   bien min-width:0 — la piste se laisse donc réduire — mais ses enfants ne se
+   réduisaient pas (libellés nowrap, compteurs à gouttière en ch, piste flex:none) :
+   le contenu sortait de la piste par la GAUCHE (justify-content:flex-end) et
+   repeignait les onglets. Le troisième onglet ajoute 166 px au centre, donc 166 px
+   de plus à trouver. Les 479 px d'écart entre la gauche et la droite sont, eux,
+   de l'espace mort : c'est le prix du centrage, pas un bug.
+
+   L'ORDRE DE SACRIFICE, ET POURQUOI
+   À 2 m on lit un chiffre et une forme ; un texte de 11 px n'existe pas. Partent
+   donc d'abord les redondances de 11 px. Les deux premiers rangs de cette liste
+   ont été RETIRÉS DE L'AFFICHAGE tout court le 27/08 (ils vivent en infobulle),
+   ce qui les sort de l'escalier : l'heure absolue de réinitialisation, puis le
+   pourcentage — la piste dit déjà le niveau, le chiffre était un luxe de près.
+   Restent, dans cet ordre :
+     1. la longueur de la piste (112 → 84 → 60 px) — on perd de la résolution,
+        pas l'information ;
+     2. les secondes du flux — le point change de couleur, et le voile
+        « FLUX PERDU » prend le relais à 30 s ;
+     3. les gouttières de .ch-quotas, qui est la grappe la plus grasse.
+   Ne partent JAMAIS : les onglets à 14 px, le temps restant, le point de flux,
+   le filet de séparation, le bouton de thème, le bouton d'aide.
+   « BOARD DE BOARD » ne part pas non plus en une rangée, et c'est contre-intuitif :
+   les pistes étant jumelles, seul le côté LE PLUS LARGE fixe le besoin. Tant que la
+   gauche (296) est plus étroite que la droite, masquer le libellé ne rend pas UN
+   pixel à la fenêtre. Il ne part qu'en deux rangées, là où la gauche coûte enfin
+   ce qu'elle mesure.
+
+   @media ET NON @container, ICI
+   Le bandeau n'existe qu'en un exemplaire et sa largeur EST celle de la fenêtre
+   (enfant direct de body, pleine largeur) : une requête de conteneur ne dirait rien
+   de plus et imposerait un contexte de containment sur body, qui porte aussi le
+   board. Les cartes, elles, existent en n exemplaires dont la largeur dépend du
+   NOMBRE de projets ouverts et pas de la fenêtre : là, plus bas, c'est @container
+   qui est juste. Les blocs qui suivent sont ordonnés du plus large au plus étroit —
+   un @media en max-width plus bas dans la feuille l'emporte à spécificité égale,
+   c'est ce qui permet à la bascule en deux rangées de RENDRE ce qu'une seule
+   rangée avait dû retirer.
+
+   Somme des minimums, palier par palier. Formule : les deux pistes latérales
+   sont jumelles en 1fr, donc la plus large impose sa largeur aux DEUX côtés :
+       besoin = 2 × max(G, D) + C + 40 (gaps) + 36 (padding)
+   Chaque pixel gagné à droite en vaut donc deux. Les bornes ci-dessous incluent
+   la pastille de l'onglet « Pull Requests » (28 px au centre) ET le bouton d'aide
+   (30 px + son gap de 26, soit 56 px à droite — donc 112 px de besoin, la droite
+   comptant double). Ces deux ajouts sont postérieurs au premier calcul ; sans le
+   recalcul, TOUS les paliers repassaient en négatif, jusqu'à -104 px, et le
+   chevauchement revenait exactement là où il avait été corrigé.
+
+   Escalier recalculé, D = largeur de la zone droite, besoin = 2×max(G,D)+C+76 :
+       palier                          D   besoin   borne    marge à la borne basse
+       base  tout visible            828     2153      ∞      +8
+       t1    heure absolue masquée   703     1903   ≤2160     +13
+       t2    pourcentage masqué      645     1787   ≤1915     +14
+       t3    pistes 112 → 84         589     1675   ≤1800     +11
+       t4    secondes du flux, gaps  526     1549   ≤1685     +12
+       t5    pistes 84 → 60, gaps    454     1405   ≤1560     +11
+       t6    DEUX RANGÉES                            ≤1415    rangée 1 = 886 px
+       t7    régime étroit                            ≤880    plancher ~712 px
+     palier  fenêtre        G    C    D   besoin  marge à la borne basse
+     P0      > 2060       296  393  789   2047    +14
+     P1      ≤ 2160       296  393  642   1753    +18
+     P2      ≤ 1915       296  393  562   1593    +18
+     P3      ≤ 1800       296  393  506   1481    +20
+     P4      ≤ 1685       296  393  429   1327    +14
+     P5      ≤ 1560       296  393  369   1207    +14
+     P6      ≤ 1415 (2 rangées)  151  393  624   807 / 413   +24
+     P7      ≤ 880        151  393  429    612    plancher ~615
+   À 900 px on est en P6 : rangée 1 demande 807 px, rangée 2 en demande 413.
+
+   ─── RECALCUL DU 27/08, APRÈS LA REFONTE DE LA BARRE ─────────────────────────
+   Quatre changements, dont trois RENDENT de la largeur et un en prend :
+
+     − l'horloge est supprimée               ~55 px à gauche
+     − « + projet » est supprimé             ~90 px à gauche (l'adoption d'un
+                                             projet est devenue contextuelle,
+                                             elle vit en tête de colonne AUTRE)
+     − `pct` et `abs` quittent l'affichage   ~183 px à DROITE, donc 366 px de
+                                             fenêtre : le plus gros gain du lot
+     − `.reste` passe de 15 à 13 px          ~7 px à droite
+     + un QUATRIÈME onglet, à pastille       ~120 px au centre
+     + le filet de séparation et ses gaps    ~25 px à droite
+
+   Refait sur les métriques Arial déjà retenues plus haut (majuscules 0,677 em,
+   minuscules 0,490 em), padding 40, gaps de grille 48 :
+
+       zone gauche  G ≈ 145 px    onglets (4)  C ≈ 539 px    zone droite  D ≈ 554 px
+       besoin = 2 × max(G, D) + C + 88  ≈  1735 px
+
+   À comparer aux ~2271 px qu'aurait demandés la barre d'avant AVEC son quatrième
+   onglet : 536 px rendus. Les paliers ci-dessus n'ont donc PAS été redescendus.
+   Ils déclenchent maintenant nettement trop tôt — un écran de 1800 px raccourcit
+   ses pistes alors qu'il a de la place de reste — mais jamais trop tard, et c'est
+   le seul sens dans lequel une erreur est tolérable ici. Les redescendre demande
+   de mesurer les libellés rendus, pas de les estimer : à faire au navigateur,
+   pas au calcul.
+
+   ─── AJUSTEMENT DU 27/08 (suite) : « Board » devient « Conversations » ───────
+   Le libellé passe de 5 à 13 signes, en minuscules pour l'essentiel. Sur les
+   métriques Arial retenues ci-dessus : 14 × (0,677 + 12 × 0,490) ≈ 92 px contre
+   ≈ 37 px, plus l'interlettrage, soit **+60 px au centre**. Le centre n'est pas
+   doublé par le centrage (seules les pistes latérales le sont), donc :
+
+       besoin ≈ 1735 + 60 ≈ 1795 px
+
+   Toujours très en dessous des paliers, qui déclenchent donc encore trop tôt —
+   le seul sens tolérable. Rien à redescendre.
+
+   ─── REFONTE DU 28/08 : LE CENTRAGE EST ABANDONNÉ ───────────────────────────
+   L'avertissement ci-dessus disait « un cinquième onglet coûterait ~120 px de
+   plus au centre, à prendre tel quel ». L'onglet Projets est arrivé, et plutôt
+   que de payer, on a retiré la cause : les onglets ne sont plus centrés dans la
+   fenêtre, ils sont accolés à la marque. La formule change de nature —
+
+       avant : besoin = 2 × max(G, D) + C + 88     (pistes latérales jumelles)
+       après : besoin =     G + C + D  + 78        (deux groupes, vide au milieu)
+
+   Sur les mêmes métriques Arial (majuscules 0,677 em, minuscules 0,490 em),
+   onglets à padding 44 et gap 6, pastille comptée 28 px :
+
+       C (5 onglets)          ≈ 726 px
+       G (marque + BOARD)     ≈  71 px
+       D (inchangée)          ≈ 554 px
+       besoin avant           ≈ 2×554 + 726 + 88 = 1922 px
+       besoin après           ≈ 71 + 726 + 554 + 78 = 1429 px
+                                                     ────────
+                                        493 px de fenêtre rendus
+
+   Et le corollaire vaut mieux que le gain : le seuil de bascule en deux rangées
+   (1415) était calé sur une barre qui demandait 1922 px, donc il se déclenchait
+   ~500 px trop tôt. À 1429 px de besoin il tombe désormais quasiment juste. Les
+   paliers P3 à P5 (pistes 112 → 84 → 60) restent, eux, prématurés — toujours
+   dans le seul sens tolérable, et toujours à mesurer au navigateur avant d'être
+   redescendus, jamais à estimer.
+
+   ATTENTION pour la prochaine retouche : la contrainte n'est plus « D compte
+   double ». Les trois zones s'additionnent maintenant à parts égales, donc un
+   pixel vaut un pixel où qu'on l'ajoute — et un sixième onglet coûterait
+   simplement sa propre largeur, ~130 px, une seule fois.
+============================================================================== */
+
+/* ── P1 et P2 ont été SUPPRIMÉS le 27/08, et c'est un gain, pas une perte.
+   Ils masquaient `.lim .abs` puis `.lim .pct` sous contrainte de largeur. Ces
+   deux valeurs ne sont plus rendues du tout : elles vivent dans le title de la
+   jauge, à toute largeur. Les deux paliers étaient donc devenus deux règles qui
+   ne trouvaient plus leur cible — exactement le genre de CSS mort qu'on ne
+   laisse pas dans ce fichier. Les paliers gardent leur numéro d'origine pour que
+   l'escalier ci-dessus reste lisible ; P3 est simplement le premier qui agit. */
+
+/* ── P3 ≤ 1800 : la piste se raccourcit ─────────────────────────────────── */
+@media (max-width:1800px){
+  .piste{width:84px}
+}
+
+/* ── P4 ≤ 1685 : les secondes du flux s'en vont, les gouttières se serrent ─
+   Le bandeau d'attention perd au même moment son texte d'aide (il ne le perd
+   PAS à l'état calme : c'est alors son seul contenu). */
+@media (max-width:1685px){
+  .ch-quotas{gap:14px}
+  .flux span{display:none}
+  .attention:not(.calme) .att-aide{display:none}
+}
+
+/* ── P5 ≤ 1560 : dernier palier en une rangée ───────────────────────────── */
+@media (max-width:1560px){
+  .piste{width:60px}
+  .lim{gap:8px}
+}
+
+/* ═══ P6 ≤ 1415 : DEUX RANGÉES, PAS DE HAMBURGER ══════════════════════════
+   Pourquoi deux rangées : un hamburger sur un écran de supervision échange
+   40 px de hauteur contre un clic AVANT de savoir s'il y avait quelque chose à
+   savoir — il cache exactement ce qu'on vient vérifier d'un coup d'œil. La
+   seconde rangée ne cache rien.
+   Pourquoi ICI et pas à 900 : 1220 est le point où une seule rangée devrait
+   commencer à rogner les ONGLETS (padding 20 → 12, puis la police). C'est la
+   seule chose que tu as demandé de garder grosse le plus longtemps possible ;
+   c'est donc elle qui fixe la bascule, pas un chiffre rond.
+   Et la bascule RAPPORTE : la rangée 1 ne paie plus le centrage au double, donc
+   le pourcentage, la piste de 112 px, les secondes du flux et les gouttières
+   pleines reviennent, et les onglets retrouvent leur taille intacte. Seuls
+   « BOARD DE BOARD » (145 px, zéro information) et l'heure absolue restent
+   sortis. Coût : 29 px de hauteur.
+   Sous 1220, la page entière passe en régime étroit (board, historique, légende). */
+@media (max-width:1415px){
+  .chrome{
+    /* `display:grid` est OBLIGATOIRE ici depuis que la barre est en flux : sans
+       lui, `grid-template-*` ci-dessous ne s'appliquerait à rien et les deux
+       rangées ne se formeraient pas. */
+    display:grid;
+    height:auto; padding:5px 10px 6px;
+    grid-template-columns:auto minmax(0,1fr);
+    grid-template-areas:
+      "g d"
+      "o o";
+    row-gap:4px; column-gap:12px;
+  }
+  .ch-g{grid-area:g}
+  /* En grille, `margin-left:auto` collerait .ch-d à droite de SA cellule sans
+     rien rendre : on le remet à zéro pour que la cellule fasse son travail. */
+  .ch-d{grid-area:d; margin-left:0; padding-left:0}
+  .onglets{grid-area:o; justify-self:center}
+  /* Le mot-marque part, la marque reste : 15 px qui gardent l'identité pour le
+     prix d'un caractère, là où « BOARD » en coûtait 47 pour la même chose. */
+  .brand{display:none}
+
+  /* ce que la seconde rangée re-donne */
+  .lim{gap:11px}
+  .piste{width:112px}
+  .flux span{display:inline}
+  .ch-quotas{gap:20px}
+
+  /* le reste de la page suit */
+  .attention{gap:14px; padding:0 10px}
+  .board{padding:10px; gap:10px}
+  /* Empiler les colonnes projet plutôt que les écraser : deux panneaux de 400 px
+     valent mieux que huit de 90. board.js n'écrit plus grid-template-columns en
+     style inline mais la variable --cols, ce qui rend cette reprise possible sans
+     !important — la feuille redevient seule maîtresse de la mise en page. */
+  .board:not(.mode-L):not(.vide){
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    grid-auto-flow:row;
+    overflow-y:auto;
+  }
+  .board.mode-L{grid-auto-columns:minmax(0,420px)}
+  .histo{padding:12px 10px 40px}
+  /* .h-row : le dernier prompt part le premier — c'est la colonne la plus longue
+     et la moins identifiante des six. Titre, date, US et volume restent. */
+  .h-row{grid-template-columns:9ch minmax(0,1fr) auto 7ch 26px; gap:12px}
+  .h-row .hp{display:none}
+  .legende{padding:8px 10px; gap:6px 16px}
+  .legende .fin{display:none}
+}
+
+/* ── P7 ≤ 880 : au-delà du cahier des charges, pour ne pas casser net ─────
+   Rangée 1 : 20 + 151 + 12 + 429 = 612 px. Le bandeau tient donc jusqu'à ~615 px.
+   L'historique passe à deux lignes par entrée : titre en haut sur toute la
+   largeur, date + US + volume en dessous, bouton ↩ à cheval sur les deux. */
+@media (max-width:880px){
+  .piste{width:84px}
+  .flux span{display:none}
+  .ch-quotas{gap:14px}
+
+  /* Les onglets se serrent, et SEULEMENT ici. Le cinquième onglet (Projets) a
+     porté la rangée de navigation de ~626 à ~746 px : le plancher du bandeau
+     remontait donc de ~615 à ~766 px, et sous cette largeur la rangée débordait
+     au lieu de se serrer. Le padding est le levier prévu de longue date pour ce
+     cas (« padding 22 → 12, puis la police ») ; on s'arrête au padding, la
+     police reste à 14 px. Gain : 5 × 20 = 100 px, plancher ramené à ~666 px. */
+  .onglet{padding:7px 12px}
+
+  .h-row{
+    grid-template-columns:auto minmax(0,1fr) auto 26px;
+    grid-template-areas:
+      "t t t a"
+      "d u m a";
+    gap:4px 10px; align-items:center;
+  }
+  .h-row .ht{grid-area:t}
+  .h-row .hdate{grid-area:d}
+  .h-row .hus{grid-area:u; justify-content:flex-start}
+  .h-row .hm{grid-area:m}
+  .h-row .hact{grid-area:a; align-self:center}
+}
+
+/* ═════════════════════ LES CARTES, PAR REQUÊTE DE CONTENEUR ═══════════════
+   Une colonne étroite n'est PAS une fenêtre étroite : sa largeur dépend du nombre
+   de projets ouverts, que la feuille ignore et que le serveur ne résume qu'en
+   mode-L/M/S/XS (une densité pour tout le board, pas pour cette colonne-ci).
+   @container lit la vraie largeur du panneau : c'est le seul endroit de la page
+   où l'information manque à @media. Les seuils sont mesurés sur le pire cas de
+   la première ligne : gouttière du glyphe (17) + gap (10) + chrono « 12m04 » à
+   17 px (51) + gap (14) + le chrome de la carte (39) = 131 px avant que
+   l'identifiant n'ait un seul pixel.
+   Le padding est repris avec .col .cartes .carte (0,3,0) pour passer devant
+   .board.mode-S .carte : à densité égale, la largeur réelle du panneau est la
+   meilleure des deux informations. */
+.col{container-type:inline-size; container-name:col}
+
+@container col (max-width:260px){
+  .col .cartes .carte{padding:10px 11px 10px; gap:2px 9px}
+  .gl{width:1em}
+  .bas{padding-right:22px}          /* la gouttière de la poubelle reste réservée */
+}
+@container col (max-width:210px){
+  /* L'identifiant passe avant le chrono : on empile plutôt que de rogner le nom. */
+  .col .cartes .carte{grid-template-columns:minmax(0,1fr)}
+  .chrono{grid-column:1/-1; text-align:left}
+  .col-hd{padding:8px 10px 7px; gap:8px}
+  .col-hd .nm{letter-spacing:.08em}
+}
+
+/* ═════════════════════ dialogue d'aide ═══════════════════════════════════
+   Volontairement long à lire et court à parcourir : des titres courts, des
+   paragraphes de trois lignes, et les mêmes glyphes que le board pour que la
+   lecture se transfère à l'écran sans traduction. */
+dialog#aide{
+  border:1px solid var(--line); border-radius:var(--r-dialogue); background:var(--panel);
+  color:var(--t1); padding:0; width:min(720px,94vw); max-height:88vh;
+  font-family:var(--mono); font-size:12.5px;
+}
+/* Le `display` doit être porté par [open] et JAMAIS par l'élément nu : la
+   feuille du navigateur ferme un <dialog> avec `display:none`, et une règle
+   `display:flex` sur `dialog#aide` l'écrase — le panneau reste alors affiché en
+   permanence, et `close()` ne peut rien fermer puisqu'il n'a jamais été ouvert.
+   C'est exactement le bug qu'on vient de corriger. */
+dialog#aide[open]{display:flex; flex-direction:column}
+dialog#aide::backdrop{background:var(--voile)}
+#aide h2{
+  border-radius:calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px) 0 0;
+  flex:none; margin:0; padding:14px 20px; font-size:12.5px; font-weight:700;
+  letter-spacing:.14em; border-bottom:1px solid var(--line);
+  background:var(--chrome); color:var(--t2);
+}
+#aide .corps{overflow-y:auto; padding:20px 22px; line-height:1.65}
+#aide .phrase{
+  margin:0 0 20px; padding:12px 14px; font-size:13.5px; line-height:1.6;
+  border-left:3px solid var(--sky); background:var(--card); color:var(--t1);
+  /* Le cote du lisere reste droit : arrondi, un filet de 3px se biseaute en
+     virgule et depose son pigment sur les aretes voisines. */
+  border-radius:0 var(--r-panneau) var(--r-panneau) 0;
+}
+#aide .phrase em{font-style:italic; color:var(--sky)}
+#aide h3{
+  margin:22px 0 7px; font-size:11px; font-weight:700; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--t3);
+}
+#aide h3:first-of-type{margin-top:0}
+#aide p{margin:0 0 6px; color:var(--t2); max-width:74ch}
+#aide b{color:var(--t1); font-weight:600}
+#aide code{
+  font-size:11.5px; color:var(--t2); background:var(--card);
+  border:1px solid var(--line); border-radius:var(--r-puce); padding:1px 5px;
+}
+#aide ul{margin:0; padding-left:0; list-style:none}
+#aide ul li{
+  margin:0 0 7px; padding-left:15px; position:relative; color:var(--t2); max-width:74ch;
+}
+#aide ul li::before{
+  content:""; position:absolute; left:0; top:.62em;
+  width:5px; height:1px; background:var(--t3);
+}
+#aide .etats li b{display:inline-block; min-width:11ch}
+#aide .pieds{
+  border-radius:0 0 calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px);
+  flex:none; display:flex; justify-content:flex-end;
+  padding:13px 20px; border-top:1px solid var(--line); background:var(--chrome);
+}
+#aide button{
+  font-family:var(--mono); font-size:12px; cursor:pointer; border-radius:var(--r-ctrl);
+  padding:7px 18px; border:1px solid var(--line); background:var(--card); color:var(--t2);
+}
+#aide button.primaire{border-color:var(--sky); color:var(--sky)}
+#aide button:hover{color:var(--t1)}
+#aide button:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* Le bouton d'aide partage l'allure du bouton de thème : deux commandes de même
+   nature, elles ne doivent pas se disputer l'attention. */
+#btn-aide{font-weight:700}
+
+/* ═════════════════════ avis fugitif ══════════════════════════════════════
+   Sert exclusivement à AVOUER qu'une action n'a pas eu lieu, et pourquoi.
+   Un clic qui ne fait rien en silence est un mensonge ; c'est la seule chose
+   que ce board n'a pas le droit de faire. */
+#avis{
+  position:fixed; left:50%; bottom:56px; transform:translateX(-50%);
+  z-index:60; max-width:min(680px,92vw);
+  padding:10px 16px; border-radius:var(--r-panneau);
+  border:1px solid var(--amber); background:var(--chrome); color:var(--t1);
+  font-family:var(--mono); font-size:12px; line-height:1.5;
+  box-shadow:0 10px 30px -12px var(--sv-ombre,rgba(0,0,0,.5));
+}
+#avis[hidden]{display:none}
+#avis b{color:var(--amber); font-weight:700}
+/* Une commande `git worktree remove` porte deux chemins absolus : ~170 signes,
+   soit le double de ce que 680 px affichent. Sans coupure elle sortirait de la
+   boîte par la droite, et c'est précisément le texte qu'on est censé pouvoir
+   relire avant de le coller. */
+#avis code{
+  display:block; margin-top:5px; padding:5px 7px;
+  background:var(--panel); border-radius:var(--r-puce);
+  color:var(--t2); font-family:var(--mono); font-size:11.5px;
+  overflow-wrap:anywhere; word-break:break-word; line-height:1.55;
+}
+.legende .fin.muet{color:var(--amber)}
+
+/* Aveu permanent, pas une alerte : couleur d'attention mais sans surface, il ne
+   doit pas concurrencer une vraie carte bloquée. */
+.legende #legende-muet{color:var(--amber); font-weight:600}
+.legende #legende-muet[hidden]{display:none}
+
+
+/* Rouvrir : action plus engageante que « sortir de la poubelle », donc plus
+   sobre visuellement — on ne veut pas qu'un clic distrait lance un terminal. */
+.reprendre.rouvrir{border-color:var(--line); color:var(--t3)}
+.reprendre.rouvrir:hover{border-color:var(--sky); color:var(--sky); background:var(--card)}
+
+/* ═════════════════════ état du worktree, sur la carte ════════════════════
+   « Lequel de mes worktrees a du travail non commité ou non poussé ? » — la
+   question qu'un dev à huit worktrees se pose vingt fois par jour, et à
+   laquelle rien ne répondait. Les badges vivent au bout de la ligne de
+   métadonnée : le texte se tronque avant eux, jamais l'inverse. */
+.meta{display:flex; align-items:baseline; gap:9px}
+.meta > :first-child{min-width:0; overflow:hidden; text-overflow:ellipsis}
+.git{display:flex; gap:6px; margin-left:auto; flex:none; font-family:var(--donnee)}
+.git b{
+  font-size:10.5px; font-weight:600; letter-spacing:.02em;
+  border:1px solid var(--line); border-radius:var(--r-puce); padding:0 5px; white-space:nowrap;
+}
+/* Aucun de ces états n'est une alerte : du travail non commité est normal.
+   Encre secondaire, jamais un pigment de statut — le canal reste libre. */
+.git .chg{color:var(--t2)}
+.git .av{color:var(--t2)}
+.git .re{color:var(--t3)}
+
+/* ═════════════════════ la PR de cette branche ════════════════════════════
+   Jointure par la BRANCHE, pas par le n° d'US : sur les données réelles l'US
+   est absente de la plupart des branches alors que la branche source d'une PR
+   est toujours exacte. La pastille reprend les pigments de l'onglet PR — même
+   vocabulaire d'un écran à l'autre. */
+.pr-puce{
+  font-family:var(--donnee); font-size:10.5px; font-weight:700; letter-spacing:.02em;
+  border:1px solid currentColor; border-radius:var(--r-puce); padding:1px 6px;
+  white-space:nowrap; flex:none; align-self:center;
+  background:color-mix(in srgb, currentColor 12%, transparent);
+}
+.pr-puce[hidden]{display:none}
+.pr-puce.conflit{color:var(--red)}
+.pr-puce.a_corriger{color:var(--red)}
+.pr-puce.a_relire{color:var(--amber)}
+.pr-puce.dort{color:var(--amber)}
+.pr-puce.prete{color:var(--green)}
+.pr-puce.en_attente,.pr-puce.brouillon{color:var(--t3)}
+.board.mode-XS .pr-puce,.board.mode-S .git{display:none}
+
+/* ═════════════════════ filtre de l'historique ════════════════════════════
+   45 conversations et aucun moyen d'en retrouver une : c'était l'onglet le
+   plus riche et le moins exploitable. Le filtre porte sur le titre, le dépôt,
+   la branche, le n° d'US et le dernier prompt — tout ce par quoi on se
+   souvient d'une conversation. */
+.h-barre{
+  display:flex; align-items:center; gap:14px;
+  padding:0 0 14px; margin-bottom:4px;
+}
+#h-filtre{
+  flex:1; min-width:0;
+  font-family:var(--texte); font-size:13px; color:var(--t1);
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r-ctrl);
+  padding:9px 12px;
+}
+#h-filtre::placeholder{color:var(--t3)}
+#h-filtre:focus{outline:none; border-color:var(--sky)}
+.h-compte{
+  font-family:var(--donnee); font-variant-numeric:tabular-nums;
+  font-size:11.5px; color:var(--t3); white-space:nowrap; flex:none;
+}

@@ -1,0 +1,101 @@
+/* LES POLICES DU BOARD — IBM Plex Sans (variable) + IBM Plex Mono.
+
+   Historique du choix, parce qu'il a change trois fois :
+     - IBM Plex Sans + Mono, embarquees (308 Ko) ;
+     - Cascadia Code, embarquee (174 Ko), pour coller au terminal ;
+     - Arial, systeme (0 Ko) ;
+     - IBM Plex, de retour (144 Ko) avec la direction ARDOISE.
+   Les fichiers de Cascadia sont conserves sous board/fonts/cascadia-retire/,
+   dans un sous-dossier que la route /fonts/ ne peut pas atteindre.
+
+   POURQUOI LE RETOUR. Arial n'a que deux graisses reelles (400 et 700) : les
+   font-weight:500 tombaient sur 400 et les :600 sur 700, donc la hierarchie a
+   trois crans du board devenait une hierarchie a deux crans. Ardoise repose sur
+   trois niveaux distincts — titre 600, libelle 500, prose 400 — et les trois
+   doivent EXISTER, sinon le titre de carte et sa ligne technique se confondent.
+
+   CE QUI EST SERVI, ET LA SURPRISE. Les trois fichiers plex-sans-400/500/600
+   trouves dans le dossier de retraite etaient le MEME octet pour octet : c'est
+   une police VARIABLE (tables fvar + gvar, verifie en lisant l'annuaire de
+   tables woff2). Un seul fichier par plage de caracteres rend donc toutes les
+   graisses de 100 a 700, et les deux copies inutiles ont ete supprimees :
+   144 Ko au total au lieu de 304.
+   Plex Mono, elle, est statique : deux fichiers, 400 et 500.
+
+   ZERO REQUETE EXTERNE. Tout est servi par le board lui-meme, sur
+   /fonts/<fichier> — la route du serveur n'ouvre qu'un seul niveau de
+   sous-dossier, donc board/fonts/ est atteignable et board/fonts/*-retire/ non.
+   Le board reste utilisable hors ligne, ce qui est la condition d'un outil
+   local.
+
+   LES GLYPHES DE STATUT NE SONT PAS DANS CES FICHIERS. ✋ ✖ ⋯ ➜ ● ⌫ vivent
+   au-dela des plages latin et latin-ext declarees ci-dessous : ils sont donc
+   rendus par la pile de repli (Segoe UI Symbol sur ce poste), exactement comme
+   du temps d'Arial. C'est voulu — les embarquer couterait un troisieme fichier
+   pour six caracteres.
+
+   font-display:swap — le texte s'affiche tout de suite dans la police de repli
+   et bascule a l'arrivee du fichier. Sur un board qui se relit toutes les
+   secondes, un texte invisible pendant 100 ms serait pire qu'un texte qui
+   change de police une fois. */
+
+/* ── IBM Plex Sans, variable (100 a 700) ─────────────────────────────────── */
+@font-face{
+  font-family:"IBM Plex Sans";
+  font-style:normal;
+  font-weight:100 700;
+  font-display:swap;
+  src:url("/fonts/plex-sans-wght-latin.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,
+                U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:"IBM Plex Sans";
+  font-style:normal;
+  font-weight:100 700;
+  font-display:swap;
+  src:url("/fonts/plex-sans-wght-latin-ext.woff2") format("woff2");
+  unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+/* ── IBM Plex Mono, statique, deux graisses ──────────────────────────────── */
+@font-face{
+  font-family:"IBM Plex Mono";
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+  src:url("/fonts/plex-mono-400-latin.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,
+                U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:"IBM Plex Mono";
+  font-style:normal;
+  font-weight:400;
+  font-display:swap;
+  src:url("/fonts/plex-mono-400-latin-ext.woff2") format("woff2");
+  unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face{
+  font-family:"IBM Plex Mono";
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url("/fonts/plex-mono-500-latin.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,
+                U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,
+                U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:"IBM Plex Mono";
+  font-style:normal;
+  font-weight:500;
+  font-display:swap;
+  src:url("/fonts/plex-mono-500-latin-ext.woff2") format("woff2");
+  unicode-range:U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+2020,
+                U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}

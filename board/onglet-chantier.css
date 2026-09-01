@@ -1,0 +1,360 @@
+/* Onglet « Chantier » — l'inventaire des arbres de travail.
+
+   Feuille séparée, comme onglet-pr.css, et pour la même raison : ce panneau
+   doit pouvoir évoluer sans entrer en collision avec board.css.
+   Elle ne définit AUCUNE couleur propre : tout vient des variables des deux
+   thèmes déclarées dans board.css, donc le panneau suit le thème sans effort.
+
+   LE VOCABULAIRE DES PIGMENTS EST CELUI DE LA BOARD, à la lettre — c'est tout
+   l'intérêt d'un quatrième onglet dans le même produit : rien à réapprendre.
+     ambre  = il faut ta main            (non commité, comme BLOQUÉ)
+     ciel   = du travail livré dort      (en revue, comme À RELIRE)
+     gris   = plus aucun signe           (réserve, comme SILENCE)
+     aucune = rien à faire               (en cours et socle, comme AU TRAVAIL)
+
+   « En cours » et « socle » partagent l'absence de couleur, et c'est juste :
+   ni l'un ni l'autre ne demande quoi que ce soit. Le glyphe (● contre ·) et la
+   place dans la liste les séparent. */
+
+.chantier{
+  flex:1; min-height:0; overflow-y:auto; padding:16px 18px 48px;
+  font-family:var(--mono);
+}
+
+/* ── en-tête : les cinq compteurs ─────────────────────────────────────────
+   Cinq nombres et non un seul. Un compteur unique « 16 à traiter » sur 29
+   arbres ne trierait rien — exactement le défaut que l'onglet PR a fini par
+   avoir en laissant `dort` gonfler `a_traiter`. Ici chaque état garde son
+   nombre, et seul « non commité » porte l'ambre. */
+.ch-tete{
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding:11px 14px; margin-bottom:18px;
+  border:1px solid var(--line); border-radius:var(--r-panneau); background:var(--panel);
+}
+.ch-tete .gros{font-size:19px; font-weight:700; color:var(--t1)}
+.ch-tete .lbl{font-size:11.5px; color:var(--t3); letter-spacing:.06em}
+.ch-cpt{display:flex; align-items:baseline; gap:6px; white-space:nowrap}
+.ch-cpt b{font-size:16px; font-weight:700; color:var(--t2); font-variant-numeric:tabular-nums}
+.ch-cpt span{font-size:11px; color:var(--t3); letter-spacing:.06em}
+.ch-cpt.non_commite b{color:var(--amber)}
+/* Libérable : une occasion de ranger, pas une donnée d'état — encre neutre.
+   Terminée : la branche est bouclée, et --green porte déjà « bon, plus rien à
+   faire » dans l'onglet PR. Il reste rare, donc il reste lisible. */
+/* Aveu, pas une donnée : les lignes socle ne sont pas listées, et l'écran le
+   dit plutôt que de laisser croire qu'il montre tout. Encre la plus discrète. */
+.ch-cpt.masque b{color:var(--t3); font-weight:400}
+.ch-cpt.masque{cursor:help}
+.ch-cpt.lib b{color:var(--t2)}
+.ch-cpt.fini b{color:var(--green)}
+.ch-cpt.en_revue b{color:var(--amber)}
+.ch-cpt.en_cours b{color:var(--t1)}
+.ch-tete .droite{margin-left:auto; display:flex; align-items:center; gap:12px}
+.ch-frais{font-size:11px; color:var(--t3)}
+.ch-frais.vieux{color:var(--amber)}
+.ch-relire{
+  font-family:var(--mono); font-size:11.5px; color:var(--t3);
+  background:none; border:1px solid var(--line); border-radius:var(--r-ctrl);
+  padding:5px 11px; cursor:pointer;
+}
+.ch-relire:hover{color:var(--t1); background:var(--card)}
+.ch-relire:disabled{opacity:.5; cursor:default}
+.ch-relire:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+.ch-degrade{
+  padding:10px 13px; margin-bottom:16px; font-size:11.5px; line-height:1.6;
+  border-radius:var(--r-panneau);
+  border:1px solid var(--amber); color:var(--amber);
+  background:color-mix(in srgb,var(--amber) 8%,var(--panel));
+}
+/* Le pavé `.ch-doute` a été retiré : trois lignes de hauteur pour un cas qui,
+   depuis que le serveur refuse de mettre en cache un relevé dégradé, ne devrait
+   plus se produire. Le doute vit maintenant dans .ch-frais, qui existe déjà —
+   même honnêteté, zéro pixel vertical. Encre secondaire et non pigment
+   d'alerte : « je ne sais pas quels arbres sont occupés » est une limite, pas
+   une urgence. */
+.ch-frais.doute{color:var(--t3); font-style:italic; cursor:help}
+.ch-vide{color:var(--t3); padding:44px 0; text-align:center}
+/* Le pavé `.ch-note` a été retiré le 27/08 : son contenu vit dans le dialogue
+   d'aide global, où 90 % en était déjà, et le bouton `?` de .ch-tete y mène
+   directement. Un panneau qui doit se lire d'un coup d'œil ne commence pas par
+   quatre lignes de prose qu'on relit tous les jours. */
+
+/* ── groupe projet, puis groupe dépôt ─────────────────────────────────────
+   Deux niveaux, et le second n'est pas décoratif : 19 des 29 arbres partagent
+   un seul dépôt. Sans l'en-tête de dépôt, son nom serait répété 19 fois dans
+   la colonne « arbre » et il ne resterait plus de place pour le suffixe, qui
+   est la seule chose qui distingue les lignes entre elles. */
+.ch-grp{margin-bottom:26px}
+.ch-hd{
+  display:flex; align-items:center; gap:12px; padding:0 0 8px;
+  border-bottom:1px solid var(--line); margin-bottom:6px;
+}
+.ch-hd .nm{
+  font-size:13px; font-weight:700; letter-spacing:.14em;
+  color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+}
+.ch-hd .ct{font-size:11.5px; color:var(--t3)}
+
+.ch-depot{margin:0 0 14px}
+/* `center` et non `baseline` : une forme géométrique n'a pas de vraie ligne de
+   base typographique, sa position dépendrait de métriques non garanties.
+   L'en-tête de PROJET juste au-dessus (.ch-hd) est déjà en `center` — on aligne
+   sur cette convention, pas sur celle des compteurs de chiffres purs. */
+.ch-dhd{display:flex; align-items:center; gap:10px; padding:6px 2px 5px 4px}
+
+/* ── LE CHEVRON EST DESSINÉ, PAS ÉCRIT ────────────────────────────────────────
+   Et ce n'est pas une préférence de style. Mesuré directement sur
+   /mnt/c/Windows/Fonts/arial.ttf et arialbd.ttf de ce poste (3506 codepoints
+   couverts) :
+
+       ▾ U+25BE   ABSENT d'Arial, normal ET gras
+       ▸ U+25B8   ABSENT
+       ▴ U+25B4   ABSENT      ◂ U+25C2   ABSENT
+       ▼ U+25BC   présent · avance 0,990 em · boîte 0,693 × 0,693 em
+       ► U+25BA   présent · avance 0,990 em · boîte 0,708 × 0,707 em
+
+   Les chevrons étaient donc rendus par une police de REPLI non déclarée, aux
+   métriques inconnues et variables d'une machine à l'autre — d'où l'impression
+   de « trop petit », avant toute question de font-size. Et `width:1.4ch`
+   réservait 1,4 × 0,556 em, une largeur calibrée sur le « 0 » d'Arial pour un
+   glyphe qu'Arial ne dessine pas : cette réservation ne garantissait rien.
+
+   Trois candidats de remplacement ont été mesurés dans Arial avant de renoncer
+   aux glyphes :
+
+       › U+203A   présent · 0,221 × 0,445 em · bas y=+0,035 (pas de jambage)
+       ˃ ˅ U+02C3/02C5   présents · 0,474 × 0,485 et 0,485 × 0,474 em —
+                  paire transposée parfaite, MÊME avance 0,584 em. Ce serait
+                  l'équivalent Arial exact des ▾/▸ manquants… sauf que ce sont
+                  des LETTRES MODIFICATIVES, dessinées pour flotter en position
+                  d'annotation phonétique : bas y=+0,110 em. L'encre paraîtrait
+                  haute dans la ligne, et on ne corrige pas ça sans bricoler un
+                  décalage vertical à la main.
+       ▽ ▷ 〈 〉 ❮ ❯   tous ABSENTS d'Arial aussi.
+
+   D'où un chevron TRACÉ EN CSS, qui règle quatre choses d'un coup :
+     · aucune dépendance à une police — la leçon de cet audit, puisque 15 des 21
+       glyphes non-ASCII de cette interface sont absents d'Arial ;
+     · PIVOTÉ de 90°, c'est mathématiquement la MÊME forme dans les deux états.
+       Aucune asymétrie possible, à aucune taille, dans aucun thème, à aucun
+       zoom — là où ▾ et ▸ sont deux dessins distincts ;
+     · la boîte est en pixels : changer la taille du chevron ne déplacera jamais
+       le nom du dépôt ;
+     · AU TRAIT et non plein. Un triangle plein de 7 × 12 px répété sur six
+       en-têtes pèse plus que ce qu'il annonce ; deux bordures de 2 px donnent la
+       même lisibilité pour un tiers d'encre. Deux variables règlent tout :
+       --car-s (côté du carré) et --car-w (épaisseur du trait).
+
+   Un carré à deux bordures pivoté de -45° donne un chevron ; son empreinte
+   visuelle vaut donc --car-s × √2. La rotation d'état est portée par .car,
+   celle du dessin par ::before : elles ne se composent pas.
+
+   `aria-expanded` pilote la rotation : l'état accessible et l'apparence n'ont
+   qu'une seule source de vérité, et le JS n'a plus de glyphe à choisir. */
+.car{
+  flex:none; display:inline-flex; align-items:center; justify-content:center;
+  font-style:normal; color:var(--t3);
+  transition:transform .12s ease;
+}
+.car::before{
+  content:""; display:block;
+  width:var(--car-s); height:var(--car-s);
+  border-right:var(--car-w) solid currentColor;
+  border-bottom:var(--car-w) solid currentColor;
+  transform:rotate(-45deg);
+}
+/* Fermé : le chevron pointe à droite, sens de lecture. Ouvert : il pointe vers
+   le contenu qu'il a révélé, en dessous. */
+[aria-expanded="true"] > .car{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){
+  .car{transition:none}
+}
+
+/* L'en-tête de dépôt EST le contrôle de pliage : un vrai <button>, donc
+   focusable et annonçable sans un attribut de plus. Le chevron est en tête, à la
+   convention des divulgations, et c'est ce qui le distingue du bouton de réserve
+   — action secondaire, rejeté en fin de ligne. Marges négatives : la surface
+   cliquable dépasse le texte sans décaler l'alignement de la colonne. */
+.ch-dplier{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--mono); background:none; border:1px solid transparent;
+  border-radius:var(--r-ctrl); padding:5px 7px; margin:0 -7px 0 -4px;
+  cursor:pointer; text-align:left; color:inherit;
+}
+/* Carré de 7 px, trait de 2 px → une empreinte d'environ 10 px, contre les
+   ~6 px du glyphe de repli qu'on ne maîtrisait pas. Volontairement PAS
+   « beaucoup plus gros » : le calcul de l'expert donne, à 18-20 px, un bouton à
+   ~31 px et un en-tête de dépôt à ~42 px contre ~30 px pour une ligne d'arbre —
+   l'en-tête cesserait d'être un repère léger pour peser plus lourd que les
+   données qu'il regroupe. Ici le bouton reste à ~25 px.
+   Si c'est encore trop discret à l'œil, ces deux valeurs sont les seules à
+   toucher, et elles ne déplacent rien d'autre. */
+.ch-dplier .car{--car-s:7px; --car-w:2px; width:16px; height:16px}
+.ch-dplier .rp{font-size:12px; font-weight:700; color:var(--t2); letter-spacing:.03em}
+.ch-dplier .ct{font-size:11px; color:var(--t3)}
+.ch-dplier:hover{background:var(--card); border-color:var(--line)}
+.ch-dplier:hover .rp{color:var(--t1)}
+.ch-dplier:hover .car{color:var(--t1)}   /* currentColor : le triangle suit */
+.ch-dplier:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* Le résumé n'existe QUE replié. Ses pigments sont ceux des compteurs de
+   l'en-tête — même vocabulaire, deux endroits. Il porte une donnée d'état, il a
+   donc droit à la couleur ; le chevron et le bouton, qui sont des contrôles,
+   restent en encre neutre. */
+.ch-resume{display:none; align-items:center; gap:8px; font-size:11px; color:var(--t3)}
+.ch-depot.ferme .ch-resume{display:inline-flex}
+.ch-resume b{font-weight:700}
+.ch-resume .etat-non_commite{color:var(--amber)}
+.ch-resume .etat-en_revue{color:var(--amber)}
+.ch-resume .etat-en_cours{color:var(--t1)}
+.ch-resume .etat-reserve{color:var(--grey)}
+.ch-resume .alerte{color:var(--amber); font-style:normal; font-weight:700}
+
+.ch-depot.ferme .ch-lignes{display:none}
+.ch-depot.ferme .ch-plier{display:none}
+
+/* Le dépliant de la réserve : un contrôle, donc un rayon de contrôle.
+   Son chevron est le MÊME chevron tracé, en carré de 4 px : action secondaire,
+   rejetée en fin de ligne. L'écart de taille avec celui du dépôt est le signal
+   de cette hiérarchie — on ne le fait donc pas grandir avec lui. */
+.ch-plier{
+  margin-left:auto; display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:11px; color:var(--t3);
+  background:none; border:1px solid var(--line); border-radius:var(--r-ctrl);
+  padding:3px 9px; cursor:pointer; white-space:nowrap;
+}
+.ch-plier .car{--car-s:4px; --car-w:1.5px; width:10px; height:10px; color:inherit}
+/* Le pli qui contient des arbres libérables se signale par sa bordure, pas par
+   un pigment : ce n'est pas une alerte, c'est un rangement possible. */
+.ch-plier.avec-lib{border-color:var(--t3); color:var(--t2)}
+.ch-plier:hover{color:var(--t1); background:var(--card)}
+.ch-plier:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ── une ligne d'arbre ────────────────────────────────────────────────────
+   état · US · branche · arbre · jetons git · âge · détail · lien */
+.ch-row{
+  display:grid; gap:14px; align-items:baseline;
+  grid-template-columns:13ch 7ch minmax(0,1.5fr) minmax(0,.9fr) auto 5ch minmax(0,1.3fr) auto;
+  padding:8px 2px 8px 11px;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
+  border-left:4px solid var(--ch-edge,var(--edge-off));
+}
+.ch-row:hover{background:var(--survol)}
+
+.ch-etat{font-size:11px; font-weight:700; letter-spacing:.08em;
+         color:var(--ch-edge,var(--t3)); white-space:nowrap;
+         display:flex; align-items:baseline; gap:6px}
+.ch-us{font-variant-numeric:tabular-nums; font-size:12px; font-weight:600;
+       color:var(--t2); white-space:nowrap}
+.ch-br{font-size:12.5px; color:var(--t1);
+       white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ch-arbre{font-size:11px; color:var(--t3);
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.ch-arbre.depot{font-style:italic}
+
+/* Jetons git : mêmes formes et mêmes encres que sur la carte de la Board.
+   Aucun n'est un pigment de statut — du travail non commité est normal, c'est
+   son ABSENCE de surveillance qui l'est moins, et ça se dit dans l'état. */
+.ch-git{display:flex; gap:6px; justify-content:flex-end; font-family:var(--donnee)}
+.ch-git b{
+  font-size:10.5px; font-weight:600; letter-spacing:.02em;
+  border:1px solid var(--line); border-radius:var(--r-puce); padding:0 5px;
+  white-space:nowrap; color:var(--t2);
+}
+.ch-git .re{color:var(--t3)}
+.ch-git .vide{border-color:transparent; color:var(--t3)}
+
+.ch-age{font-variant-numeric:tabular-nums; font-size:11px; color:var(--t3);
+        text-align:right; white-space:nowrap}
+.ch-age.vieux{color:var(--t2)}
+
+.ch-det{font-size:11.5px; color:var(--t3); white-space:nowrap;
+        overflow:hidden; text-overflow:ellipsis}
+.ch-det b{font-weight:600; color:var(--t2)}
+.ch-det .pr-etat-txt{font-weight:700; letter-spacing:.06em}
+.ch-det em{font-style:normal; color:var(--t2)}
+
+/* ── « puis-je supprimer ce worktree ? » ──────────────────────────────────────
+   La nuance qui gouverne les deux niveaux : `git worktree remove` retire le
+   RÉPERTOIRE de travail, pas la branche. Celle-ci survit dans le dépôt avec tous
+   ses commits. Le risque de perte se limite donc à ce qui n'existe QUE dans ce
+   répertoire — fichiers non commités, commits non poussés.
+     ARBRE LIBÉRABLE   rien à perdre : l'arbre peut partir, la branche reste.
+     BRANCHE TERMINÉE  en plus déjà dans la base : les deux peuvent partir.
+   Aucun pigment de STATUT ici : ce n'est pas un état de l'arbre, c'est une
+   permission. Neutre pour le premier niveau, --green pour le second — la même
+   encre que « PRÊTE » dans l'onglet PR, pour la même idée. */
+.ch-lib{
+  font-size:10.5px; font-weight:700; letter-spacing:.06em; white-space:nowrap;
+  border:1px solid var(--line); border-radius:var(--r-puce); padding:1px 6px;
+  color:var(--t2); cursor:help;
+}
+.ch-lib.fini{color:var(--green); border-color:color-mix(in srgb,var(--green) 45%,transparent)}
+/* Le geste le plus destructeur que cet écran propose — et il ne fait que copier
+   une commande. Sobre, comme `.reprendre.rouvrir` dans l'historique : on ne veut
+   pas qu'un clic distrait donne envie de coller. */
+.ch-lien.liberer{border-color:var(--line); color:var(--t3)}
+.ch-lien.liberer:hover{border-color:var(--t2); color:var(--t1); background:var(--card)}
+
+/* Jusqu'à trois gestes par ligne, tous en lecture : copier le chemin, ouvrir
+   une conversation, aller à la PR. Ils ne se réordonnent jamais — la place d'un
+   bouton est fixe, comme la place d'une carte dans la Board. */
+.ch-act{display:flex; gap:5px; justify-content:flex-end}
+
+.ch-lien{
+  width:22px; height:22px; display:grid; place-content:center;
+  border:1px solid var(--line); border-radius:var(--r-puce); color:var(--t3);
+  text-decoration:none; font-size:12px; background:none; cursor:pointer;
+  font-family:var(--mono); padding:0;
+}
+.ch-lien:hover{color:var(--t1); background:var(--card); border-color:var(--t3)}
+.ch-lien:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+/* Rouvrir une conversation lance un terminal : plus sobre que les autres
+   boutons, exactement comme `.reprendre.rouvrir` dans l'Historique. On ne veut
+   pas qu'un clic distrait ouvre un pane. */
+.ch-lien.rouvrir:hover{border-color:var(--sky); color:var(--sky)}
+
+/* La ligne d'alerte occupe toute la largeur, sous les colonnes : c'est une
+   phrase, pas une donnée. Elle n'apparaît que si elle change une décision. */
+.ch-alerte{
+  grid-column:1/-1; margin:2px 0 0; font-size:11px; line-height:1.5;
+  display:flex; align-items:baseline; gap:7px;
+}
+.ch-alerte i{font-style:normal; flex:none}
+.ch-alerte.agir{color:var(--amber)}
+.ch-alerte.bloque{color:var(--red)}
+.ch-alerte.info{color:var(--t3)}
+
+/* ── les cinq états ───────────────────────────────────────────────────────
+   `--ch-edge` porte à la fois le filet gauche et l'encre du libellé : une
+   couleur de statut ne voyage jamais seule, elle est toujours accompagnée d'un
+   glyphe et d'un mot. */
+.ch-row.en_cours{--ch-edge:var(--edge-off)}
+.ch-row.en_cours .ch-etat{color:var(--t2)}
+.ch-row.en_revue{--ch-edge:var(--amber)}
+.ch-row.non_commite{--ch-edge:var(--amber)}
+.ch-row.reserve{--ch-edge:var(--edge-off)}
+.ch-row.reserve .ch-etat{color:var(--grey)}
+.ch-row.reserve .ch-br{color:var(--t2)}
+/* Le socle est le fond de tableau : présent, sans relief, jamais une action. */
+.ch-row.socle{--ch-edge:transparent}
+.ch-row.socle .ch-etat,.ch-row.socle .ch-br{color:var(--t3)}
+
+/* Réserve repliée : l'état par défaut. 13 lignes grises en bas d'écran, c'est
+   du bruit ; 13 lignes derrière un dépliant, c'est un inventaire qu'on
+   consulte quand on décide de faire du ménage. */
+.ch-depot.replie .ch-row.reserve{display:none}
+
+/* Ordre de sacrifice : d'abord le nom d'arbre (le dépôt est déjà en en-tête),
+   puis l'US et l'âge. La BRANCHE et l'ÉTAT ne partent jamais — ce sont les deux
+   colonnes qui font exister l'onglet. */
+@media (max-width:1280px){
+  .ch-row{grid-template-columns:13ch 7ch minmax(0,1.5fr) auto 5ch minmax(0,1.2fr) auto}
+  .ch-row .ch-arbre{display:none}
+}
+@media (max-width:1000px){
+  .ch-row{grid-template-columns:2.4ch minmax(0,1fr) auto minmax(0,1fr) auto}
+  .ch-row .ch-us,.ch-row .ch-age{display:none}
+  .ch-etat{overflow:hidden; width:2.4ch}
+  .ch-etat span{display:none}
+}

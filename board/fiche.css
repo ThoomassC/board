@@ -1,0 +1,283 @@
+/* Styles de la fiche d'une conversation (dialog#fiche).
+   Fichier separe de board.css : charge APRES lui, il gagne par l'ordre de la
+   cascade sans avoir besoin d'un seul !important. */
+
+/* ═════════════════════ hierarchie de lecture de cette fiche ══════════════
+   1) depot / branche / titre  -> l'IDENTITE de la conversation, la raison
+      pour laquelle on a clique. Jamais tronquee, toujours le plus gros texte
+      de la fiche apres le chiffre hero. Sortie en carte propre (fond --card)
+      pour se distinguer du reste, qui reste plat.
+   2) modele / messages / duree / transcript -> des complements courts,
+      groupes en grille compacte et discrete (demi-gras, encre secondaire).
+   3) contexte -> LE chiffre hero de la fiche (>=48px). C'est le seul des deux
+      candidats possibles (contexte % vs chrono d'en-tete) qui declenche une
+      decision — compacter ou non — le chrono, lui, n'est qu'un repere deja
+      visible dans l'en-tete. Un seul hero par vue : voir la reponse jointe.
+   4) en ce moment / sous-agents -> ce qui s'y passe MAINTENANT. Lisible,
+      legerement mis en avant, nettement en retrait de l'identite et du hero.
+   5) pieds -> pure utilite (fermer, aller au pane, poubelle). Jamais mis en
+      evidence : ce n'est pas de la lecture, c'est de l'action.
+   Une couleur de statut ne voyage jamais seule : la pastille d'etat (h2) et
+   les badges de sous-agents portent un fond teinte via currentColor, jamais
+   du texte colore nu. */
+
+/* ═════════════════════ fiche d'une conversation ══════════════════════════
+   S'ouvre au clic sur une session. Repond a « qu'est-ce qui se passe la-dedans »
+   AVANT de decider d'aller au pane. Lecture seule : on ne pilote rien d'ici.
+   Le `display` est porte par [open] — cf. le piege documente dans board.css.
+   Police : Arial partout, comme dans tout le board. --texte et --donnee
+   pointent donc au meme endroit ; la distinction est conservee dans le code
+   parce qu'elle dit encore l'INTENTION de chaque bloc (ce qui se LIT contre ce
+   qui s'ALIGNE), et parce qu'elle suffirait a redonner une police differente
+   aux valeurs sans toucher a une seule regle d'ici.
+   font-variant-numeric repart de "normal" (proportionnel) : rien ici n'est
+   une colonne de chiffres empilee, sauf l'unique exception documentee plus
+   bas (.fi-agent em), reactivee localement. */
+dialog#fiche{
+  border:1px solid var(--line); border-radius:var(--r-dialogue); background:var(--panel);
+  color:var(--t1); padding:0; width:min(760px,94vw); max-height:88vh;
+  font-family:var(--texte); font-size:12.5px;
+  font-variant-numeric:normal;
+}
+dialog#fiche[open]{display:flex; flex-direction:column}
+dialog#fiche::backdrop{background:var(--voile)}
+
+/* ── en-tete : identifiant, pastille de statut, projet, chrono ──────────── */
+#fiche h2{
+  border-radius:calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px) 0 0;
+  flex:none; margin:0; padding:13px 20px; font-size:13px; font-weight:700;
+  letter-spacing:.02em; border-bottom:1px solid var(--line);
+  background:var(--chrome); color:var(--t1);
+  display:flex; align-items:baseline; gap:11px; flex-wrap:wrap;
+}
+/* Identifiant de la conversation : technique, il s'ALIGNE -> Mono.
+   Necessite board.js : span de classe "fi-id" (voir §4 de la reponse). */
+#fiche h2 .fi-id{
+  font-family:var(--donnee); font-weight:700; font-size:15px;
+  color:var(--t1); letter-spacing:-.01em;
+}
+/* Pastille de statut : jamais du texte colore seul. Le fond et le bord sont
+   des teintes de la couleur DEJA posee en inline par board.js (currentColor),
+   donc aucune nouvelle variable a declarer, et une parite de theme automatique.
+   Le glyphe doit vivre DANS ce texte pour que la couleur ne voyage jamais
+   sans son glyphe ET son libelle — necessite board.js (voir §4). */
+#fiche h2 .etat{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:11px; font-weight:700; letter-spacing:.03em; line-height:1.4;
+  padding:3px 10px 3px 9px; border-radius:var(--r-jeton);
+  background:color-mix(in srgb, currentColor 15%, var(--panel));
+  border:1px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+/* Le projet ("· PROJET_A") : lecture secondaire, encre atténuée. Cible par
+   exclusion car board.js ne lui pose pas de classe. */
+#fiche h2 span:not(.fi-id):not(.etat):not(.chrono){
+  color:var(--t2); font-weight:500; font-size:13px;
+}
+/* Chrono d'en-tete : donnee qui s'aligne -> Mono. Se reecrit a chaque
+   rafraichissement (toutes les 3 s) : une largeur reservee en ch, plutot que
+   des chiffres tabulaires sur une valeur isolee, absorbe le changement de
+   longueur ("3m" -> "23j14h") sans faire sauter l'en-tete. */
+#fiche h2 .chrono{
+  margin-left:auto; font-family:var(--donnee); font-size:15px; font-weight:600;
+  color:var(--t2); min-width:7ch; text-align:right;
+}
+
+#fiche .corps{overflow-y:auto; padding:18px 20px 22px}
+
+/* ═════════════════════ bandeau d'identite ═════════════════════════════════
+   Depot, branche et titre sont la raison d'ouvrir la fiche : sur quoi je
+   travaille. Sortis en carte (fond --card, filet --line) pour porter le
+   regard en premier, avant la grille de faits qui reste plate et discrete.
+   Aucune troncature : ni nowrap, ni ellipsis, ni overflow cache. Une branche
+   de soixante caracteres revient a la ligne, et overflow-wrap:anywhere casse
+   une chaine sans espace plutot que de la laisser deborder du panneau. La
+   taille ne varie pas avec la longueur du texte : seule la hauteur du bloc
+   peut changer d'un rafraichissement a l'autre, jamais sa mise en forme. */
+/* ═════════════════════ L'IDENTITÉ ════════════════════════════════════════
+   Deux lignes, aucune étiquette.
+
+   « dépôt », « branche », « titre » ont disparu : ce sont trois mots qui
+   n'apprenaient rien, et qui volaient une colonne entière à la valeur. Un nom
+   de dépôt et un nom de branche se reconnaissent à leur forme — des mots
+   collés par des points, des tirets ou des barres, jamais des phrases —,
+   séparés par un chevron qui dit la relation contenant/contenu. Un titre se
+   reconnaît à ce qu'il est de la prose. La forme porte le sens, pas le mot.
+
+   Conséquence agréable : plus de grille à deux colonnes, donc plus rien qui
+   puisse s'effondrer en étroit. Le bloc dégrade tout seul.
+
+   Aucune troncature : `overflow-wrap:anywhere` casse une chaîne sans espace
+   plutôt que de la laisser déborder, et rien n'est en `nowrap`. */
+.fi-ident{
+  padding:15px 17px; margin-bottom:18px;
+  background:var(--card); border:1px solid var(--line);
+  /* Le côté du liseré reste droit : arrondi, un filet de 3px se biseaute en
+     virgule et dépose son pigment sur les arêtes voisines. La règle existait
+     déjà dans ce fichier sur .fi-outil — elle est ici généralisée. */
+  border-radius:0 var(--r-panneau) var(--r-panneau) 0;
+  /* Un liseré discret côté texte : donne un bord au bloc sans emprunter au
+     canal STATUT, qui reste sur la pastille et le glyphe. */
+  border-left:3px solid var(--t3);
+}
+
+/* Ligne 1 — le chemin. Chasse fixe : ce sont des identifiants techniques.
+   Le dépôt porte l'encre primaire, la branche l'encre secondaire : on lit
+   « ce dépôt, cette branche » et non deux valeurs de même poids. */
+.fi-chemin{
+  font-family:var(--donnee); font-size:15px; line-height:1.45;
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:0 9px;
+  margin-bottom:7px; min-width:0;
+}
+.fi-chemin b{font-weight:500; overflow-wrap:anywhere; min-width:0}
+.fi-chemin .fi-depot{color:var(--t1)}
+.fi-chemin .fi-branche{color:var(--t2)}
+.fi-chemin .fi-sep{font-style:normal; color:var(--t3); font-size:13px}
+
+/* Ligne 2 — le nom. C'est la seule prose du bloc, et le repère le plus humain
+   de toute la fiche : c'est lui qu'on reconnaît d'un coup d'œil. */
+.fi-titre{
+  font-family:var(--texte); font-size:22px; font-weight:600; line-height:1.3;
+  color:var(--t1); overflow-wrap:anywhere; text-wrap:balance;
+}
+
+@media (max-width:620px){
+  .fi-ident{padding:13px 14px}
+  .fi-chemin{font-size:14px}
+  .fi-titre{font-size:19px}
+}
+
+/* ═════════════════════ faits compacts + chiffre hero ══════════════════════
+   modele / messages / conversation / transcript : des tuiles d'indicateur au
+   sens strict — intitule en casse de phrase sans deux-points, valeur en
+   demi-gras. Corps discret : plus petit et plus pale que l'identite, puisque
+   ce sont des complements, pas la raison de l'ouverture de la fiche. */
+.fi-faits{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr));
+  gap:11px 16px; margin-bottom:18px;
+}
+.fi-faits div{display:grid; gap:3px; align-content:start}
+.fi-faits b{
+  font-size:10px; font-weight:700; letter-spacing:.02em; color:var(--t3);
+}
+.fi-faits span{
+  font-family:var(--texte); font-size:13px; font-weight:600; color:var(--t1);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* La case "contexte" se distingue seule : c'est elle qui porte le chiffre
+   hero (>=48px). Le reglage "chiffres proportionnels sur une valeur isolee"
+   n'a plus d'objet : les dix chiffres d'Arial ont la meme avance, le tabulaire
+   est acquis d'office et ne coute rien. Selectionnee par la presence de sa
+   jauge, sans avoir besoin d'une classe cote board.js : elle occupe toute la
+   largeur de la rangee et se detache par un filet superieur, sous les tuiles
+   compactes. */
+.fi-faits > div:has(.fi-jauge){
+  grid-column:1 / -1;
+  display:flex; flex-direction:column; gap:8px;
+  padding-top:16px; margin-top:2px;
+  border-top:1px solid var(--line);
+}
+.fi-faits > div:has(.fi-jauge) span{
+  font-family:var(--texte); font-size:52px; font-weight:600; line-height:1;
+  color:var(--t1);
+  overflow:visible; text-overflow:clip; white-space:normal;
+}
+@media (max-width:620px){
+  .fi-faits > div:has(.fi-jauge) span{font-size:48px}
+}
+
+/* Jauge de contexte. Le remplissage porte la severite (accent/avertissement/
+   danger) et la PISTE non remplie est un pas plus clair de la MEME rampe —
+   jamais un gris neutre — pour que la couleur se lise sur toute la barre.
+   Realise via color-mix() sur les pigments existants : aucune variable
+   nouvelle, donc aucune parite de theme a verifier. Necessite board.js :
+   la classe de niveau ("ok"/"warn"/"crit", deja fournie par e.ctx_level) sur
+   .fi-jauge, et la suppression du fond inline pose aujourd'hui sur <i>
+   (une couleur inline gagnerait toujours sur ces regles de classe, meme sans
+   !important) — voir §4 de la reponse jointe. */
+.fi-jauge{position:relative; height:8px; border-radius:var(--r-jeton); overflow:hidden}
+.fi-jauge i{
+  position:absolute; inset:0 auto 0 0; border-radius:0;   /* bord droit vif : cf. .piste i */
+  transition:width .3s ease;
+}
+.fi-jauge.ok{background:color-mix(in srgb, var(--green) 25%, var(--card))}
+.fi-jauge.ok i{background:var(--green)}
+.fi-jauge.warn{background:color-mix(in srgb, var(--amber) 25%, var(--card))}
+.fi-jauge.warn i{background:var(--amber)}
+.fi-jauge.crit{background:color-mix(in srgb, var(--red) 25%, var(--card))}
+.fi-jauge.crit i{background:var(--red)}
+
+/* ═════════════════════ sections : en ce moment / sous-agents ══════════════ */
+#fiche section{margin-top:20px}
+#fiche section:empty{display:none}
+#fiche h3{
+  margin:0 0 8px; font-size:10.5px; font-weight:700; letter-spacing:.15em;
+  text-transform:uppercase; color:var(--t3);
+}
+
+.fi-outil{
+  display:flex; align-items:baseline; gap:10px; padding:9px 12px;
+  border:1px solid var(--line); border-left:3px solid var(--sky);
+  border-radius:0 var(--r-panneau) var(--r-panneau) 0; background:var(--card);
+}
+.fi-outil b{color:var(--sky); font-weight:700; font-size:13px}
+.fi-outil span{
+  color:var(--t2); font-size:13px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
+/* "depuis Xs" : une seule instance a la fois (un seul outil en vol), donc
+   pas de colonne a aligner -> chiffres proportionnels, comme partout ailleurs
+   dans cette fiche. Mono conserve car c'est une duree, une donnee technique. */
+.fi-outil em{
+  margin-left:auto; font-style:normal; font-family:var(--donnee);
+  color:var(--t3); white-space:nowrap;
+}
+.fi-rien{color:var(--t3); font-size:11.5px}
+
+.fi-agent{
+  display:flex; align-items:baseline; gap:10px; padding:7px 2px;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
+}
+/* Badge "EN COURS" / "fini" : meme logique que la pastille d'en-tete, la
+   couleur de statut ne voyage jamais en texte nu. Fond et bord derives de
+   currentColor, pose par les classes .vif/.fait deja presentes — aucune
+   modification de board.js necessaire ici. */
+.fi-agent b{
+  display:inline-flex; align-items:center;
+  font-size:9.5px; font-weight:700; letter-spacing:.04em;
+  padding:2px 8px; border-radius:var(--r-jeton);
+  background:color-mix(in srgb, currentColor 14%, var(--panel));
+  border:1px solid color-mix(in srgb, currentColor 38%, transparent);
+}
+.fi-agent.vif b{color:var(--amber)}
+.fi-agent.fait b{color:var(--t3)}
+.fi-agent span{
+  color:var(--t2); font-size:12px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
+/* Seule colonne veritable de la fiche : plusieurs sous-agents empilent leur
+   duree les uns sous les autres. C'est l'exception documentee du contrat
+   "proportionnel sauf en colonne" -> chiffres tabulaires ici, et seulement ici. */
+.fi-agent em{
+  margin-left:auto; font-style:normal; font-family:var(--donnee);
+  font-variant-numeric:tabular-nums; color:var(--t3); white-space:nowrap;
+}
+
+/* ═════════════════════ pieds ═══════════════════════════════════════════
+   Pure utilite : fermer, aller au pane, poubelle. Jamais mis en evidence. */
+#fiche .pieds{
+  border-radius:0 0 calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px);
+  flex-wrap:wrap; row-gap:8px;
+  flex:none; display:flex; align-items:center; gap:10px;
+  padding:13px 20px; border-top:1px solid var(--line); background:var(--chrome);
+}
+.fi-note{font-size:11px; color:var(--t3); margin-right:auto}
+#fiche button{
+  font-family:var(--texte); font-weight:600; font-size:11.5px; cursor:pointer;
+  border-radius:var(--r-ctrl); padding:7px 14px; border:1px solid var(--line);
+  background:var(--card); color:var(--t2);
+}
+#fiche button:hover:not(:disabled){color:var(--t1)}
+#fiche button:disabled{opacity:.45; cursor:default}
+#fiche button.primaire{border-color:var(--sky); color:var(--sky)}
+#fiche button:focus-visible{outline:2px solid var(--sky); outline-offset:2px}

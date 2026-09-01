@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Board</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="polices.css">
+<link rel="stylesheet" href="board.css">
+<link rel="stylesheet" href="onglet-pr.css">
+<link rel="stylesheet" href="onglet-chantier.css">
+<link rel="stylesheet" href="onglet-projet.css">
+<link rel="stylesheet" href="fiche.css">
+<link rel="stylesheet" href="board-visuel.css">
+</head>
+<body>
+
+<header class="chrome">
+  <div class="ch-g">
+    <!-- La marque reprend le favicon : trois colonnes. Elle est tracée en
+         currentColor, donc dans l'encre neutre du mot-marque — la barre
+         n'accueille aucun pigment, et surtout pas l'indigo des pastilles, qui
+         signifie « il y a du travail » à deux centimètres de là. -->
+    <svg class="marque" viewBox="0 0 32 32" width="15" height="15"
+         aria-hidden="true" focusable="false">
+      <rect x="3"  y="8" width="6" height="16" rx="2" fill="currentColor"/>
+      <rect x="13" y="8" width="6" height="16" rx="2" fill="currentColor"/>
+      <rect x="23" y="8" width="6" height="16" rx="2" fill="currentColor"/>
+    </svg>
+    <span class="brand">BOARD</span>
+  </div>
+
+  <nav class="onglets" role="tablist">
+    <button class="onglet" id="ong-board" role="tab" aria-selected="true"
+            aria-controls="board">Conversations</button>
+    <button class="onglet" id="ong-projets" role="tab" aria-selected="false"
+            aria-controls="projets">Projets<span class="pastille vide" id="pj-badge">0</span></button>
+    <button class="onglet" id="ong-pr" role="tab" aria-selected="false"
+            aria-controls="prs">Pull Requests<span class="pastille vide" id="pr-badge">0</span></button>
+    <button class="onglet" id="ong-chantier" role="tab" aria-selected="false"
+            aria-controls="chantier">Chantier<span class="pastille vide" id="ch-badge">0</span></button>
+    <button class="onglet" id="ong-histo" role="tab" aria-selected="false"
+            aria-controls="histo">Historique</button>
+  </nav>
+
+  <div class="ch-d">
+    <div class="ch-quotas">
+      <span class="lim" id="lim-5h">
+        <span class="lbl">5H</span>
+        <span class="jauge"><span class="piste"><i></i></span><span class="rythme"></span></span>
+        <span class="reste">—</span>
+      </span>
+      <span class="lim" id="lim-7j">
+        <span class="lbl">7J</span>
+        <span class="jauge"><span class="piste"><i></i></span><span class="rythme"></span></span>
+        <span class="reste">—</span>
+      </span>
+    </div>
+    <span class="ch-sep" aria-hidden="true"></span>
+    <div class="ch-ctrl">
+      <span class="flux" id="flux" title="Fraîcheur du flux"><b></b><span>—</span></span>
+      <button class="theme bascule" id="btn-theme" type="button" title="Basculer le thème"><span class="rail" aria-hidden="true"></span></button>
+      <button class="theme" id="btn-aide" type="button" title="À quoi sert cet écran ?"
+              aria-label="Aide">?</button>
+    </div>
+  </div>
+</header>
+
+<div class="attention calme" id="attention" role="status" aria-live="polite">
+  <span class="att-aide">en attente du flux…</span>
+</div>
+
+<main class="board" id="board" role="tabpanel" aria-labelledby="ong-board"></main>
+
+<section class="projets" id="projets" role="tabpanel" aria-labelledby="ong-projets" hidden></section>
+
+<section class="prs" id="prs" role="tabpanel" aria-labelledby="ong-pr" hidden></section>
+
+<section class="chantier" id="chantier" role="tabpanel" aria-labelledby="ong-chantier" hidden></section>
+
+<section class="histo" id="histo" role="tabpanel" aria-labelledby="ong-histo" hidden>
+  <div class="h-barre">
+    <input id="h-filtre" type="search" autocomplete="off" spellcheck="false"
+           placeholder="filtrer : titre, dépôt, branche, n° d'US, dernier prompt…"
+           aria-label="Filtrer l'historique">
+    <span class="h-compte" id="h-compte"></span>
+    <button type="button" class="aide-onglet" id="h-aide"
+            title="À quoi sert cet onglet ?" aria-label="Aide sur l'onglet Historique">?</button>
+  </div>
+  <div id="h-liste"></div>
+</section>
+
+<footer class="legende">
+  <span><i style="background:var(--red)"></i>✋ bloqué — attend ton OK · ✖ erreur</span>
+  <span><i style="background:var(--amber)"></i>➜ à relire</span>
+  <span><i style="background:var(--grey)"></i>⋯ silence</span>
+  <span><i style="background:var(--green)"></i>● au travail</span>
+  <span id="legende-muet" hidden></span>
+  <span class="fin" id="legende-fin">⌫ = poubelle · glisser pour réordonner</span>
+</footer>
+
+<div id="voile"><div>FLUX PERDU</div></div>
+
+<div id="avis" role="status" aria-live="polite" hidden></div>
+
+<dialog id="fiche">
+  <h2 id="fi-tete">CONVERSATION</h2>
+  <div class="corps">
+    <div class="fi-ident" id="fi-ident"></div>
+    <div class="fi-faits" id="fi-faits"></div>
+    <section id="fi-maintenant"></section>
+    <section id="fi-agents"></section>
+  </div>
+  <div class="pieds">
+    <span class="fi-note" id="fi-note"></span>
+    <button type="button" id="fi-poubelle">⌫ poubelle</button>
+    <button type="button" id="fi-pane" class="primaire">Aller au pane</button>
+    <button type="button" id="fi-fermer">Fermer</button>
+  </div>
+</dialog>
+
+<dialog id="aide">
+  <h2>À QUOI SERT CET ÉCRAN</h2>
+  <div class="corps">
+    <p class="phrase">Il répond à une seule question, en moins d'une seconde, à deux
+      mètres&nbsp;: <em>est-ce que l'une de mes conversations m'attend&nbsp;?</em></p>
+
+    <h3>Pourquoi il existe</h3>
+    <p>Avec plusieurs conversations Claude Code ouvertes en parallèle, deux choses
+      se perdent. Une conversation demande une autorisation ou termine son tour, et
+      personne ne le voit — elle attend vingt minutes pour rien. Et au bout de six
+      panes, on ne sait plus laquelle travaille sur quoi. Cet écran traite ces deux
+      oublis, et rien d'autre.</p>
+
+    <h3>Le board</h3>
+    <p>Une conversation est un <b>session</b>, un projet est une <b>table</b>, et tu es
+      le <b>professeur</b> qui circule. Les places sont fixes&nbsp;: une session ne change
+      jamais de table tout seul, pour que tu retiennes où il est assis et que tu
+      repères un changement du coin de l'œil. Seul ton geste peut déplacer quelqu'un.</p>
+
+    <h3>Les cinq états</h3>
+    <ul class="etats">
+      <li><b style="color:var(--amber)">✋ bloqué</b> — gelé, rien n'avance sans une
+        touche de ta part. Le seul état qui clignote, et le plus urgent&nbsp;:
+        débloquer coûte une frappe, diagnostiquer coûte dix minutes.</li>
+      <li><b style="color:var(--red)">✖ erreur</b> — le tour est cassé.</li>
+      <li><b style="color:var(--grey)">⋯ silence</b> — plus aucun signe depuis 90 s.
+        Le pane est peut-être fermé. L'écran préfère l'avouer que de te faire croire
+        que ça travaille encore.</li>
+      <li><b style="color:var(--sky)">➜ à relire</b> — la session a livré son tour. Du
+        travail livré dort.</li>
+      <li><b>● au travail</b> — sans couleur, à dessein&nbsp;: il n'y a rien à faire.</li>
+    </ul>
+
+    <h3>Les deux jauges du haut</h3>
+    <p>Tes quotas 5 h et 7 j, avec le temps restant avant réinitialisation. Le petit
+      trait vertical sur chaque jauge est le <b>repère de rythme</b>&nbsp;: il marque
+      où tu devrais en être si tu consommais régulièrement. Si le remplissage le
+      dépasse, tu vas trop vite — c'est ça le signal utile, pas le pourcentage.
+      C'est pourquoi la barre n'affiche que trois choses par jauge&nbsp;: le nom, la
+      piste colorée et le temps restant. Le pourcentage exact et l'heure de
+      réinitialisation sont dans l'infobulle de la jauge, à portée de curseur.</p>
+
+    <h3>Les gestes</h3>
+    <ul class="gestes">
+      <li><b>Clic sur une carte</b> — ouvre la <b>fiche</b> de la conversation&nbsp;:
+        ce qu'elle fait à cet instant, les sous-agents qui travaillent pour elle, et
+        ses derniers échanges. Tout en lecture seule — on ne pilote rien depuis ici.
+        Un bouton de la fiche amène au pane, si ce pane est suivi.</li>
+      <li><b>Survol d'une seconde</b> — marque « vu »&nbsp;: la conversation quitte le
+        bandeau d'alerte et cesse de clignoter, sans changer d'état.</li>
+      <li><b>⌫ sur une carte</b> — met la session à la poubelle. Elle quitte le board et
+        reste dans l'historique, avec un <b>↩</b> pour le faire revenir. Rien n'est
+        jamais supprimé.</li>
+      <li><b>Glisser</b> une colonne ou une session — réordonne, et c'est mémorisé.</li>
+      <li><b>Adopter un projet</b> — le serveur repère les conversations qui ne
+        se rattachent à aucun projet déclaré, en déduit un nom et une racine, et
+        les propose en haut de la colonne <b>AUTRE</b>. Un clic ouvre le
+        formulaire pré-rempli&nbsp;; valider crée la colonne, sa couleur, et dépose
+        un lanceur <code>claude-nomprojet</code> dans <code>~/.local/bin</code>.</li>
+    </ul>
+
+    <h3>Les cinq onglets</h3>
+    <p><b>Projets</b>, la synthèse : par projet, qui tient la balle et quelle est
+      ta prochaine action. C'est le seul onglet organisé par projet plutôt que par
+      type d'objet — il ne montre rien de neuf, il range ce que les autres
+      dispersent. <b>Conversations</b>, celles qui sont ouvertes en ce moment. <b>Pull Requests</b>, ce qui t'attend
+      sur Azure DevOps, trié par ce que tu dois faire plutôt qu'en liste plate.
+      <b>Chantier</b>, tous tes arbres de travail — y compris ceux qu'aucune
+      conversation n'occupe, qui sont la grande majorité.
+      <b>Historique</b>, toutes les conversations de la machine, groupées par projet.</p>
+
+    <h3 id="aide-historique">L'onglet Historique</h3>
+    <p>Toutes les conversations de cette machine, groupées par projet — celles qui
+      ne se rattachent à aucun projet configuré tombent dans <b>AUTRE</b>. Rien
+      n'est jamais supprimé&nbsp;: cet onglet est la mémoire complète du poste, pas
+      une sélection.</p>
+    <p>Une conversation mise à la poubelle depuis l'onglet Conversations apparaît
+      ici sur <b>fond grisé</b>, avec un <b>↩</b> en bout de ligne pour la remettre
+      dans les projets en cours. Le <b>↺</b>, lui, est disponible sur
+      <em>toute</em> ligne et pas seulement sur les archivées&nbsp;: il rouvre la
+      conversation dans son dossier d'origine, même vieille de trois semaines.</p>
+    <p>Le champ de filtre porte sur le titre, le dépôt, la branche, le n° d'US et
+      le dernier prompt — tout ce par quoi on se souvient d'une conversation. Il
+      travaille sur les données déjà chargées, donc la réponse est immédiate à la
+      frappe&nbsp;; le compteur à sa droite dit combien de lignes sur le total.</p>
+
+    <h3 id="aide-chantier">Pourquoi l'onglet Chantier existe</h3>
+    <p>Une conversation est un moment, une pull request est une fin de parcours.
+      Ce qui dure, c'est la <b>branche</b> et son arbre de travail — et c'est la
+      seule clé qui relie les trois autres onglets entre eux. L'onglet
+      Conversations ne montre
+      que les arbres où une conversation est ouverte&nbsp;: sur cette machine,
+      un sur vingt-neuf. Chantier montre les vingt-neuf.</p>
+    <p>Un arbre n'a qu'un seul état, choisi par priorité&nbsp;: ce qui vit, puis ce
+      qui est chez quelqu'un d'autre, puis ce qui peut se perdre, puis le socle,
+      puis la réserve — jamais deux étiquettes à la fois. Les colonnes de droite,
+      elles, ne se taisent pas pour autant&nbsp;: un arbre où une conversation
+      travaille affiche aussi sa pull request s'il en a une.</p>
+    <p>Chaque <b>dépôt</b> se replie d'un clic sur son nom. Replié, il annonce ce
+      qu'il contient — et il n'a pas le droit de taire une incohérence&nbsp;: le
+      <b>⚠</b> reste visible. Les projets, eux, ne se replient jamais.</p>
+    <ul class="etats">
+      <li><b>● en cours</b> — une conversation vivante travaille dedans.</li>
+      <li><b style="color:var(--sky)">➜ en revue</b> — une PR ouverte porte cette
+        branche. La balle est chez quelqu'un d'autre, mais l'horloge tourne.</li>
+      <li><b style="color:var(--amber)">✋ non commité</b> — du travail modifié
+        que ni PR ni conversation ne surveille. C'est la seule façon silencieuse
+        de perdre du travail sur ce poste.</li>
+      <li><b>· socle</b> — <code>main</code>, <code>master</code> ou
+        <code>develop</code>. Ces lignes ne sont <b>pas listées</b>&nbsp;: on n'y
+        travaille pas, il n'y a rien à y libérer. Elles sont comptées à part en
+        haut du panneau, pour que l'écran n'ait pas l'air d'en cacher.</li>
+      <li><b style="color:var(--grey)">⋯ réserve</b> — une branche de travail au
+        repos, arbre propre, que rien ne suit. Ce n'est pas un reproche&nbsp;:
+        c'est ton stock. Replié par défaut, et signalé quand la branche est déjà
+        dans <code>develop</code> — l'arbre peut alors être libéré.</li>
+    </ul>
+    <h3>Quand puis-je supprimer un arbre de travail&nbsp;?</h3>
+    <p>C'est la question à laquelle rien ne répondait, et elle a une réponse en
+      deux temps — parce que <code>git worktree remove</code> retire le
+      <b>répertoire</b>, pas la branche&nbsp;: celle-ci survit dans le dépôt avec
+      tous ses commits. Le seul travail qui ne survivrait pas est donc celui qui
+      n'existe que là&nbsp;: les fichiers non commités et les commits non poussés.</p>
+    <ul class="etats">
+      <li><b>ARBRE LIBÉRABLE</b> — arbre propre, rien à pousser, aucune
+        conversation dedans, aucune PR ouverte, et ce n'est pas le clone
+        principal. Le retirer ne perd rien&nbsp;; la branche reste.</li>
+      <li><b style="color:var(--green)">BRANCHE TERMINÉE</b> — en plus, la branche
+        est déjà dans la base&nbsp;: elle peut partir avec l'arbre.</li>
+    </ul>
+    <p>Chaque ligne qui n'est <em>pas</em> libérable dit pourquoi, au survol&nbsp;:
+      « PR #31003 encore ouverte », « 2 conversations y travaillent », « 3 fichiers
+      non commités »… Et « terminée » se calcule contre une référence
+      <b>locale</b>&nbsp;: si tu n'as pas fait <code>git fetch</code> récemment,
+      une branche fusionnée depuis peut encore apparaître comme non fusionnée.
+      L'erreur ne va jamais dans l'autre sens.</p>
+    <p>Cet onglet ne touche à aucun dépôt&nbsp;: pas de <code>fetch</code>, pas de
+      <code>commit</code>, pas de suppression d'arbre. Il montre, et il amène —
+      <b>⧉</b> copie le chemin, <b>↺</b> ouvre une conversation au bon endroit,
+      <b>↗</b> mène à la pull request, <b>⌫</b> copie la commande qui libère
+      l'arbre. Rien n'est jamais exécuté d'ici.</p>
+
+    <h3>Ce qu'il ne fera jamais</h3>
+    <p>Te mentir. Si le flux s'interrompt, l'écran se grise et affiche
+      <b>FLUX PERDU</b> au lieu de rester figé sur des chiffres périmés. Un tableau
+      grisé est honnête&nbsp;; un tableau figé ne l'est pas.</p>
+  </div>
+  <div class="pieds">
+    <button type="button" id="aide-fermer" class="primaire">Fermer</button>
+  </div>
+</dialog>
+
+<dialog id="nouveau">
+  <h2>NOUVEAU PROJET</h2>
+  <form class="corps" id="form-projet">
+    <label>Nom
+      <input id="np-nom" name="nom" required autocomplete="off" spellcheck="false"
+             placeholder="ProjetA" pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,31}">
+    </label>
+    <label>Dossier racine
+      <input id="np-racine" name="racine" required autocomplete="off" spellcheck="false"
+             placeholder="~/repos/clients/ProjetA">
+    </label>
+    <p class="aide">Le projet devient une colonne du board, et un lanceur
+      <code id="np-apercu">claude-nomprojet</code> est déposé dans
+      <code>~/.local/bin</code> : le taper dans WSL ouvre une conversation
+      directement dans ce dossier.</p>
+    <p class="msg" id="np-msg" role="status" aria-live="polite"></p>
+  </form>
+  <div class="pieds">
+    <button type="button" id="np-annuler">Annuler</button>
+    <button type="submit" form="form-projet" class="primaire" id="np-creer">Créer</button>
+  </div>
+</dialog>
+
+<script src="board.js"></script>
+</body>
+</html>

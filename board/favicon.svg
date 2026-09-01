@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img"
+     aria-label="Board">
+  <!-- Trois colonnes épaisses, et RIEN D'AUTRE.
+
+       La version précédente dessinait des cartes dans les colonnes : à 16 px,
+       la seule taille qui compte pour un favicon, chaque carte tombait sous le
+       pixel et l'ensemble se refermait en bouillie grise.
+
+       La géométrie est contrainte par cette taille, pas par le goût. À 16 px un
+       pixel écran vaut DEUX unités de ce viewBox, donc :
+         · toutes les coordonnées sont paires — un bord impair tomberait à
+           cheval sur la grille et rendrait une colonne plus fine que ses
+           voisines ;
+         · l'écart entre colonnes fait 4 unités, soit 2 px. À 2 unités (1 px) il
+           se refermait et les trois colonnes fusionnaient en un bloc blanc.
+
+       Fond indigo PLEIN, la couleur des pastilles : l'icône se détache aussi
+       bien sur un onglet clair que sombre, donc aucune règle de thème n'est
+       nécessaire. Blanc sur cet indigo : contraste 6,2. -->
+  <rect width="32" height="32" rx="7" fill="#5A4CD2"/>
+  <g fill="#FFFFFF">
+    <rect x="3"  y="8" width="6" height="16" rx="2"/>
+    <rect x="13" y="8" width="6" height="16" rx="2"/>
+    <rect x="23" y="8" width="6" height="16" rx="2"/>
+  </g>
+</svg>
