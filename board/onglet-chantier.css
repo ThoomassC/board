@@ -92,6 +92,7 @@
 .ch-hd .nm{
   font-size:13px; font-weight:700; letter-spacing:.14em;
   color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+  text-shadow:var(--neon-txt);
 }
 .ch-hd .ct{font-size:11.5px; color:var(--t3)}
 
@@ -238,8 +239,11 @@
   padding:8px 2px 8px 11px;
   border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
   border-left:4px solid var(--ch-edge,var(--edge-off));
+  /* Même alias que l'onglet PR : --edge nourrit --neon-etat. */
+  --edge:var(--ch-edge,var(--edge-off));
+  box-shadow:var(--neon-etat);
 }
-.ch-row:hover{background:var(--survol)}
+.ch-row:hover{background:var(--survol); box-shadow:var(--neon-etat), var(--neon-proj)}
 
 .ch-etat{font-size:11px; font-weight:700; letter-spacing:.08em;
          color:var(--ch-edge,var(--t3)); white-space:nowrap;

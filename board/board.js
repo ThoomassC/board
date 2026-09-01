@@ -1928,8 +1928,13 @@ $("#form-projet").addEventListener("submit", async ev => {
 function litTheme() {
   try { const v = localStorage.getItem("board-theme");
         if (v === "clair" || v === "sombre") return v; } catch {}
-  try { return matchMedia("(prefers-color-scheme: light)").matches ? "clair" : "sombre"; }
-  catch { return "sombre"; }
+  // SOMBRE PAR DÉFAUT, sans consulter le système. Le board suivait
+  // `prefers-color-scheme`, donc sur un Windows réglé en clair il s'ouvrait en
+  // clair — alors que c'est un écran de surveillance posé à côté d'un terminal
+  // sombre, et que la direction Ardoise est pensée pour le sombre (les néons
+  // ci-dessous n'existent pas en clair, un halo sur du blanc se lit comme un
+  // flou d'impression). Le thème clair reste entier et à un clic.
+  return "sombre";
 }
 
 function poseTheme(t) {
