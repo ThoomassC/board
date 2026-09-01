@@ -36,6 +36,11 @@
   </div>
 
   <nav class="onglets" role="tablist">
+    <!-- La plaque de verre qui porte la sélection. Purement décorative :
+         l'état lisible par une aide technique reste aria-selected sur les
+         boutons, et elle est donc masquée aux lecteurs d'écran. Sa position
+         est mesurée par placerCurseur() dans board.js. -->
+    <span class="curseur" aria-hidden="true"></span>
     <button class="onglet" id="ong-board" role="tab" aria-selected="true"
             aria-controls="board">Conversations</button>
     <button class="onglet" id="ong-projets" role="tab" aria-selected="false"
