@@ -541,8 +541,32 @@ body{
    d'état. Or « tout va bien » se dit déjà, dans ce produit, par l'ABSENCE de
    couleur : « ● au travail — sans couleur, à dessein : il n'y a rien à faire ».
    Le régime calme est à l'écran ce que `working` est à une carte. */
+/* ── LE RÉGIME DE REPOS ────────────────────────────────────────────────────
+   Trois éléments, et une hiérarchie qui n'existait pas : le message tenait en
+   une seule phrase de 15 px gras, donc « Rien ne t'attend » et « 2 déjà vues »
+   se lisaient au même volume. Or l'un est un verdict et l'autre une note de
+   bas de page. Un seul coup d'œil doit rapporter le verdict ; le décompte
+   n'est là que pour qui s'y attarde. */
+.att-repos{display:flex; align-items:baseline; gap:11px; min-width:0}
+/* Le point : plein quand au moins une conversation travaille, creux quand plus
+   rien ne bouge. Deux états, aucun pigment nouveau — le vert existe déjà, et
+   il ne signifie ici ni un statut de carte ni une alerte : il dit « ça tourne ».
+   Aligné sur la ligne de base du verdict, pas centré sur sa hauteur : à côté
+   d'un texte, un point se lit comme une ponctuation. */
+.att-pt{
+  flex:none; width:7px; height:7px; border-radius:50%;
+  background:var(--green); transform:translateY(-1px);
+}
+.att-pt.creux{background:transparent; box-shadow:inset 0 0 0 1.5px var(--grey)}
 .att-msg{
   font-family:var(--ui); font-size:14px; font-weight:700; color:var(--t1);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* Le décompte : un cran plus petit, un cran plus léger, une encre plus douce.
+   C'est ce qui reste quand on a retiré le tiret cadratin — la ponctuation ne
+   sert plus à séparer deux choses de même poids, la typographie le fait. */
+.att-det{
+  font-family:var(--ui); font-size:13px; font-weight:600; color:var(--t2);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
