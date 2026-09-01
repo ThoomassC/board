@@ -529,6 +529,40 @@ body{
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
+/* ═════════════════════ glissement d'onglet ═══════════════════════════════
+   Le panneau qui arrive entre par le côté d'où il vient. La logique de sens vit
+   dans board.js (`sensOnglet`), qui lit les rangs réels des onglets dans le DOM.
+
+   TRANSFORM ET OPACITY UNIQUEMENT : ce sont les deux seules propriétés qu'un
+   navigateur anime sans recalculer la mise en page. Animer une marge ou une
+   largeur ferait relire à chaque image la grille des colonnes, les cinq
+   requêtes de conteneur et les hauteurs de cartes — sur un écran qui reçoit
+   déjà un instantané par seconde, c'est le genre de détail qui transforme une
+   animation en saccade.
+
+   22 px de course : assez pour que l'œil lise une direction, trop peu pour
+   qu'un panneau paraisse venir d'ailleurs que de juste à côté. */
+@keyframes entre-d{
+  from{opacity:0; transform:translateX(22px)}
+  to  {opacity:1; transform:none}
+}
+@keyframes entre-g{
+  from{opacity:0; transform:translateX(-22px)}
+  to  {opacity:1; transform:none}
+}
+.entre-d{animation:entre-d .19s cubic-bezier(.22,.61,.36,1) both}
+.entre-g{animation:entre-g .19s cubic-bezier(.22,.61,.36,1) both}
+
+/* La pilule d'onglet ne saute plus d'un onglet à l'autre : son fond et son
+   encre se fondent. Ce n'est pas du mouvement — la barre garde sa règle « rien
+   ne se déplace jamais ici » — c'est la même durée que le panneau, pour que les
+   deux gestes se lisent comme un seul. */
+.onglet{transition:background-color .19s ease-out, color .19s ease-out}
+
+@media (prefers-reduced-motion:reduce){
+  .entre-d,.entre-g{animation:none}
+}
+
 /* ═════════════════════ colonnes projet ═══════════════════════════════════ */
 .board{flex:1; min-height:0; display:grid; gap:12px; padding:12px 14px 14px;
        align-content:start; overflow:hidden;
