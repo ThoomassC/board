@@ -794,6 +794,44 @@ body{
   background:color-mix(in srgb,var(--edge,var(--edge-off)) 16%,transparent);
 }
 .pill .gl{font-size:10px; line-height:1; font-style:normal}
+/* ── « lu » : l'accusé de lecture ──────────────────────────────────────────
+   Il vit à côté de la pastille et non dans la gouttière de la poubelle, pour
+   deux raisons. D'abord il RÉPOND à la pastille : « ➜ À RELIRE » puis « ✓ lu »
+   se lisent comme une question et sa réponse. Ensuite il est visible en
+   permanence, là où la poubelle n'apparaît qu'au survol — une action qu'on fait
+   vingt fois par jour ne se cache pas, et une action destructrice ne s'affiche
+   pas. Les deux règles vont dans des sens opposés, ce qui est correct : elles
+   ne portent pas le même risque.
+
+   AU REPOS IL EST NEUTRE. Un bouton coloré sur une carte entrerait en
+   concurrence avec le canal STATUT, qui est la seule chose qui a le droit de
+   porter un pigment ici. Au survol il prend --sky, l'accent du chrome — c'est
+   précisément l'usage pour lequel --sky a été libéré : signaler un contrôle,
+   jamais un état. */
+.valider{
+  flex:none; display:inline-flex; align-items:center; gap:5px;
+  font-family:var(--ui); font-size:10.5px; font-weight:600; letter-spacing:.04em;
+  text-transform:uppercase; white-space:nowrap; line-height:1;
+  padding:4px 10px; border-radius:var(--r-jeton);
+  color:var(--t2); background:transparent; border:1px solid var(--line);
+  cursor:pointer; transition:color .15s, border-color .15s, background-color .15s;
+}
+.valider i{font-style:normal; font-size:10px}
+.valider:hover{
+  color:var(--sky);
+  border-color:color-mix(in srgb,var(--sky) 45%,var(--line));
+  background:color-mix(in srgb,var(--sky) 10%,transparent);
+}
+.valider:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+/* Le témoin, une fois l'accusé posé : pas un bouton, pas une bordure, aucune
+   action possible. Il ne dit qu'une chose — « c'est toi qui l'as grisée ». */
+.relue{
+  flex:none; display:inline-flex; align-items:center; gap:5px;
+  font-family:var(--ui); font-size:10.5px; font-weight:600; letter-spacing:.04em;
+  text-transform:uppercase; white-space:nowrap; color:var(--t3);
+}
+.relue i{font-style:normal; font-size:10px}
+
 .chrono{
   margin-left:auto; font-family:var(--donnee); font-variant-numeric:tabular-nums;
   font-size:13px; font-weight:500; color:var(--t2);
