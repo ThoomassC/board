@@ -197,19 +197,31 @@ function rendAttention(snap) {
   classe(zone, "tout", attTout && liste.length > 3);
   if (!liste.length) {
     classe(zone, "calme", true);
-    const s = document.createElement("span");
-    s.className = "att-msg";
     // Compter par ÉTAT, pas le total : annoncer « 3 sessions au travail » quand
     // un seul travaille, c'était le mensonge le plus visible du bandeau.
     const tous = (snap.groupes || []).flatMap(g => g.sessions || []);
     const par = t => tous.filter(e => e.state === t).length;
     const bosse = par("working"), vues = tous.length - bosse;
-    if (!tous.length) s.textContent = "Aucune conversation ouverte";
-    else if (!vues) s.textContent = `Rien ne t'attend — ${bosse} au travail`;
-    else if (!bosse) s.textContent = `Rien de nouveau — ${vues} déjà vue${vues>1?"s":""}`;
-    else s.textContent = `Rien de nouveau — ${bosse} au travail, ` +
-                         `${vues} déjà vue${vues>1?"s":""}`;
-    zone.append(s);
+
+    // UN SEUL VERDICT, et c'est « rien ne t'attend ».
+    // Il y avait deux formules — « rien ne t'attend » quand tout travaillait,
+    // « rien de nouveau » dès qu'une conversation avait déjà été vue. La
+    // nuance était juste mais elle se payait cher : la phrase du repos changeait
+    // de sens selon un détail que le décompte dit déjà, et « rien de nouveau »
+    // est plus faible que ce que le bandeau sait vraiment. Une file d'attente
+    // vide, c'est exactement « rien ne t'attend », dans les quatre cas.
+    const verdict = tous.length ? "Rien ne t'attend" : "Aucune conversation ouverte";
+    const morceaux = [];
+    if (bosse) morceaux.push(`${bosse} au travail`);
+    if (vues)  morceaux.push(`${vues} déjà vue${vues > 1 ? "s" : ""}`);
+
+    // Le point d'état, le verdict, le décompte : trois éléments au lieu d'une
+    // phrase, parce que les trois n'ont pas le même poids (cf. board.css).
+    const bloc = el("span", "att-repos");
+    bloc.append(el("span", "att-pt" + (bosse ? "" : " creux")),
+                el("span", "att-msg", verdict));
+    if (morceaux.length) bloc.append(el("span", "att-det", morceaux.join(", ")));
+    zone.append(bloc);
     return;
   }
   classe(zone, "calme", false);

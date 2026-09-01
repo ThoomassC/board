@@ -151,13 +151,29 @@
   box-shadow:inset 0 0 0 1px var(--sv-lisere);
 }
 
-/* La board au calme : un sol à peine texturé, uniquement quand rien
-   n'attend — dès qu'une alerte apparaît, board.css reprend seul la main sur
-   la couleur amber, je ne rajoute rien qui puisse la noyer. */
+/* ── LE SOL DU BANDEAU EST ÉTEINT (01/09) ────────────────────────────────────
+   C'était un filet vertical tous les 46 px sous le message de repos. Deux
+   raisons de l'éteindre, et la seconde est la vraie.
+
+   1. Le bandeau est la seule zone de l'écran dont le FOND est un canal : en
+      régime d'alerte, board.css le teinte à 10 % de la gravité maximale
+      présente. Poser une texture sur cette surface, c'est mettre du motif là
+      où le fond porte de l'information — même si les deux ne coexistent
+      jamais, l'œil apprend à lire ce fond, et une texture lui enseigne le
+      contraire.
+   2. Un bandeau vide est la RÉCOMPENSE d'une file d'attente vide. C'est le
+      seul endroit de l'écran qui peut dire « tu peux regarder ailleurs », et
+      il ne le dit bien qu'en étant vide. Le meubler, même discrètement,
+      revient à retirer la seule bonne nouvelle que le board sait donner.
+
+   Le code reste, comme pour le grain des colonnes : décommenter les trois
+   lignes rallume le sol, et les sept variables --sv-* restent à jour dans les
+   deux thèmes.
 .attention.calme{
   background-image:repeating-linear-gradient(90deg,
     var(--sv-lisere) 0 1px, transparent 1px 46px);
 }
+*/
 
 /* ═══════════════════════ le professeur, présent à l'écran ═════════════════
    Une silhouette minimale (une forme arrondie, aucun visage) posée en tout
