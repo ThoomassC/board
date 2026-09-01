@@ -298,6 +298,40 @@ def etat_git(cwd):
 
 
 # ------------------------------------------------------------ rattachement
+# Le dépôt du board lui-même : STATIQUE vaut <dépôt>/board, son parent est donc
+# la racine du dépôt. Sert uniquement à reconnaître la colonne de l'outil.
+DEPOT_OUTIL = os.path.realpath(os.path.dirname(STATIQUE))
+
+
+def projet_outil(cfg):
+    """Le nom du projet déclaré qui pointe sur le dépôt du board, ou None.
+
+    Le board est un OUTIL, pas une mission : sa colonne n'a pas à prendre la
+    place d'un projet client dans l'ordre de lecture. On regarde d'abord les
+    projets pour lesquels on est payé, on regarde son outil ensuite.
+
+    La reconnaissance se fait sur le CHEMIN, jamais sur le nom. Coder
+    « BOARD en dernier » aurait mis un nom de projet en dur dans le moteur —
+    exactement ce que ce dépôt s'interdit (cf. README) — et n'aurait pas marché
+    pour quelqu'un qui appelle sa colonne autrement. La règle vaut donc pour
+    n'importe quel nom, sur n'importe quel poste : est « l'outil » le projet dont
+    la racine est le dossier qui contient ce fichier.
+
+    Renvoie None quand le board n'est pas déclaré comme projet — le cas normal
+    pour quelqu'un qui ne développe pas le board.
+    """
+    for p in cfg.get("projects", []):
+        racine = (p.get("root") or "").strip()
+        if not racine:
+            continue
+        try:
+            if os.path.realpath(os.path.expanduser(racine)) == DEPOT_OUTIL:
+                return p.get("name")
+        except OSError:
+            continue
+    return None
+
+
 def projet_de(cwd, cfg):
     """Premier projet dont la racine préfixe le cwd, sinon le repli."""
     if cwd:
@@ -688,6 +722,16 @@ class Board:
         # Ordre des colonnes : config d'abord, layout.json s'il en impose un autre.
         ordre = [p.get("name") for p in self.cfg.get("projects", [])]
         repli = self.cfg.get("fallback_project", "AUTRE")
+        # La colonne de l'outil passe DERRIÈRE les projets de mission, quel que
+        # soit son rang dans la configuration. Elle reste néanmoins devant le
+        # repli, qui est absolument dernier : « AUTRE » n'est pas un projet, c'est
+        # ce qui n'a pas trouvé de projet.
+        # Cette règle s'applique AVANT layout.json, donc un ordre posé à la main
+        # par glisser-déposer continue de gagner — un geste de l'utilisateur
+        # passe toujours devant une règle du moteur.
+        outil = projet_outil(self.cfg)
+        if outil and outil in ordre:
+            ordre = [n for n in ordre if n != outil] + [outil]
         impose = self.layout.get("projects") or []
         if impose:
             ordre = [n for n in impose if n in ordre or n == repli] + \
