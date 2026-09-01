@@ -352,13 +352,24 @@ function majCarte(c, e) {
   // La pastille ecrit l'etat en clair : c'est le canal STATUT depuis Ardoise.
   texte($(".lib", c), e.libelle);
 
-  // Le bouton n'existe que là où il a un sens : une conversation « à relire »
-  // pas encore acquittée. Marquée, il laisse la place à un témoin statique —
-  // sans lui, la carte serait simplement grisée et on ne saurait pas pourquoi.
+  // ── LE CANAL STATUT NE PORTE QU'UNE SEULE PASTILLE À LA FOIS ───────────────
+  // Une conversation acquittée n'est plus « à relire » : elle est « relue ». La
+  // pastille d'état s'efface donc au profit du témoin, qui prend sa place et sa
+  // géométrie. Garder les deux affichait « À RELIRE ✓ RELUE » côte à côte — une
+  // question et sa réponse au même instant, c'est-à-dire un écran qui demande
+  // encore ce qu'on vient de lui donner.
+  //
+  // Ce n'est pas un mensonge sur l'état : le serveur maintient `review`, et il a
+  // raison — la conversation attend toujours quelque chose de la MACHINE. Ce que
+  // la carte affiche, c'est où en est L'UTILISATEUR, et l'infobulle porte les
+  // deux lectures pour qui veut la vérité brute.
   const arelire = e.state === "review";
+  const acquittee = arelire && e.seen;
+  $(".pill", c).hidden    = acquittee;
   $(".valider", c).hidden = !(arelire && !e.seen);
-  $(".relue", c).hidden   = !(arelire && e.seen);
-  attr(c, "title", `${e.libelle} · ${e.project} · ${e.repo || ""}`);
+  $(".relue", c).hidden   = !acquittee;
+  attr(c, "title", `${e.libelle}${acquittee ? " · relue, acquittée par toi" : ""}`
+                   + ` · ${e.project} · ${e.repo || ""}`);
 
   // ── la PR de cette branche, s'il en existe une
   const puce = $(".pr-puce", c);

@@ -823,14 +823,28 @@ body{
   background:color-mix(in srgb,var(--sky) 10%,transparent);
 }
 .valider:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
-/* Le témoin, une fois l'accusé posé : pas un bouton, pas une bordure, aucune
-   action possible. Il ne dit qu'une chose — « c'est toi qui l'as grisée ». */
+/* Le témoin PREND LA PLACE de la pastille d'état, dont il reprend exactement la
+   géométrie : même hauteur, même rayon, même graisse. Ce n'est pas de la
+   coquetterie — la dernière ligne de la carte garde sa hauteur au pixel, donc
+   rien ne se déplace au moment du clic, et la colonne de chronos ne bouge pas
+   d'une carte à l'autre selon qu'elle est acquittée ou non.
+
+   Il est NEUTRE et sans bordure : ce n'est pas un bouton, il n'y a plus rien à
+   cliquer, et « relue » n'est pas un état de conversation qui mériterait un
+   pigment. Il ne dit qu'une chose — « c'est toi qui l'as grisée ». */
 .relue{
-  flex:none; display:inline-flex; align-items:center; gap:5px;
-  font-family:var(--ui); font-size:10.5px; font-weight:600; letter-spacing:.04em;
-  text-transform:uppercase; white-space:nowrap; color:var(--t3);
+  flex:none; display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--ui); font-size:10.5px; font-weight:700;
+  letter-spacing:.07em; text-transform:uppercase; white-space:nowrap;
+  padding:4px 10px; border-radius:var(--r-jeton);
+  color:var(--t3); background:color-mix(in srgb,var(--grey) 12%,transparent);
 }
-.relue i{font-style:normal; font-size:10px}
+.relue i{font-style:normal; font-size:10px; line-height:1}
+
+/* La bordure ambre part avec la pastille. Elle disait « celle-ci attend ton
+   regard » : une fois le regard donné, elle mentirait. La carte redevient une
+   carte ordinaire, simplement grisée par .vu. */
+.carte.review.vu{border-color:var(--line)}
 
 .chrono{
   margin-left:auto; font-family:var(--donnee); font-variant-numeric:tabular-nums;
