@@ -1630,11 +1630,58 @@ function ligneChantier(a) {
   return r;
 }
 
+/* ── LE GLISSEMENT D'ONGLET ───────────────────────────────────────────────────
+   Le panneau qui arrive entre par le côté d'où il vient : on va vers la droite
+   dans la barre, il entre par la droite. Ça donne à cinq panneaux empilés au
+   même endroit une géographie — « l'Historique est à droite de tout » — que le
+   basculement instantané ne donnait pas.
+
+   SEUL LE PANNEAU QUI ARRIVE EST ANIMÉ, et c'est un choix, pas une facilité.
+   Animer aussi celui qui part suppose de le garder visible pendant la sortie :
+   les cinq panneaux sont des frères en flux, donc deux visibles en même temps
+   s'empilent verticalement et l'écran saute. Il faudrait les sortir du flux en
+   position absolue le temps de la transition — c'est-à-dire recalculer leur
+   hauteur à chaque bascule, sur un écran dont la doctrine est que rien ne bouge
+   sans qu'on l'ait demandé. L'entrée seule suffit à dire le sens ; la sortie
+   coûterait un risque de saut pour une nuance.
+
+   190 ms : au-dessus, on attend l'interface ; en dessous, on ne perçoit plus la
+   direction, donc autant ne rien animer. La courbe est décélérée (le mouvement
+   arrive et se pose, il ne rebondit pas).
+
+   `prefers-reduced-motion` désactive tout, plus bas dans board.css. */
+function sensOnglet(de, vers) {
+  if (!de || de === vers) return 0;
+  // Les rangs sont lus dans le DOM, pas dans PANNEAUX : l'ordre des onglets est
+  // une décision de board.html, et une table JS qui le duplique finirait un jour
+  // par le contredire en silence.
+  const ids = [...document.querySelectorAll(".onglets .onglet")].map(b => b.id);
+  const a = ids.indexOf((PANNEAUX[de] || {}).onglet?.slice(1));
+  const b = ids.indexOf((PANNEAUX[vers] || {}).onglet?.slice(1));
+  if (a < 0 || b < 0) return 0;
+  return b > a ? 1 : -1;
+}
+
+function glisser(panneau, sens) {
+  const classe = sens > 0 ? "entre-d" : "entre-g";
+  panneau.classList.remove("entre-d", "entre-g");
+  // Reflow forcé : retirer puis remettre la même classe dans le même tour de
+  // boucle ne rejoue PAS l'animation — le navigateur ne voit qu'un état final
+  // identique. Lire offsetWidth le force à recalculer entre les deux.
+  void panneau.offsetWidth;
+  panneau.classList.add(classe);
+  panneau.addEventListener("animationend",
+    () => panneau.classList.remove("entre-d", "entre-g"), { once: true });
+}
+
 function ongler(quel) {
+  const sens = sensOnglet(ongletActif, quel);
   ongletActif = quel;
   for (const [nom, o] of Object.entries(PANNEAUX)) {
-    $(o.panneau).hidden = nom !== quel;
+    const p = $(o.panneau);
+    p.hidden = nom !== quel;
     attr($(o.onglet), "aria-selected", nom === quel);
+    if (nom === quel && sens) glisser(p, sens);
   }
   // Le bandeau d'attention ne concerne que les conversations : ailleurs il
   // mentirait sur ce que l'écran montre.
