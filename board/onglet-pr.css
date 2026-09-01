@@ -49,6 +49,7 @@
 .pr-hd .nm{
   font-size:13px; font-weight:700; letter-spacing:.14em;
   color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+  text-shadow:var(--neon-txt);
 }
 .pr-hd .ct{font-size:11.5px; color:var(--t3)}
 
@@ -59,7 +60,14 @@
   padding:9px 2px 9px 11px;
   border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
   border-left:4px solid var(--pr-edge,var(--edge-off));
+  /* Le rail d'état s'allume. `--edge` est ALIASÉ sur `--pr-edge` : le token
+     --neon-etat de board.css lit --edge, et cette ligne le lui fournit sans
+     qu'il ait à connaître le vocabulaire de cet onglet. Un seul token de néon
+     pour les cinq onglets, aucune duplication de valeur. */
+  --edge:var(--pr-edge,var(--edge-off));
+  box-shadow:var(--neon-etat);
 }
+.pr-row:hover{background:var(--survol); box-shadow:var(--neon-etat), var(--neon-proj)}
 .pr-row:hover{background:var(--survol)}
 
 .pr-etat{font-size:11px; font-weight:700; letter-spacing:.08em;

@@ -35,26 +35,33 @@
    écrite ailleurs que dans ces deux blocs : c'est ce qui garantit qu'aucun
    élément ne se retrouve avec le texte d'un thème sur le fond de l'autre.
 
-   CONTRASTE, recalculé le 01/09 sur la nouvelle palette. Chaque encre est
+   LES QUATRE SURFACES SOMBRES ONT ÉTÉ ÉCLAIRCIES d'un cran le 01/09, à teinte
+   constante : #0E0D14 -> #17151F pour le fond, et autant pour les trois autres.
+   Un fond quasi noir écrasait la profondeur que la direction repose sur l'ombre
+   — et il ne laissait aucune place aux néons, qui ont besoin d'un fond assez
+   clair pour qu'un halo se distingue du noir pur. Les cinq pigments ont été
+   remontés du même cran, sinon ils auraient perdu leur avance sur les surfaces.
+
+   CONTRASTE, recalculé à chaque changement de palette. Chaque encre est
    vérifiée contre les QUATRE fonds de son thème, pas seulement contre --bg.
-   Les 16 combinaisons passent le seuil AA de 4,5:1. Les deux plus justes :
+   Les 16 combinaisons passent le seuil AA de 4,5:1. Les plus justes :
        clair   --t3 #6E6885 sur --chrome  ->  4,55
        clair   --red #CC2A48 sur --chrome ->  4,54
-   Le pire cas du thème sombre est --t3/--grey sur --card, à 4,86. Toute
-   nouvelle valeur se revérifie de la même façon. */
+       sombre  --t3 #9691AC sur --card    ->  4,97
+   Toute nouvelle valeur se revérifie de la même façon. */
 
 :root, :root[data-theme="sombre"]{
-  --chrome:#0B0A11; --bg:#0E0D14; --panel:#17161F; --card:#1D1B27; --line:#2A2837;
-  --t1:#F3F1F9; --t2:#B2ADC6; --t3:#8B86A1;
-  --amber:#FFB84D; --red:#FF6B84; --sky:#8B7CFF; --green:#4ED8A0; --grey:#8B86A1;
-  --edge-off:#332F42;
-  --survol:rgba(255,255,255,.045);
-  --voile:rgba(14,13,20,.7);
+  --chrome:#131220; --bg:#17151F; --panel:#201E2B; --card:#272438; --line:#363146;
+  --t1:#F5F3FB; --t2:#BAB5CD; --t3:#9691AC;
+  --amber:#FFC061; --red:#FF7E93; --sky:#9A8CFF; --green:#5FE0AC; --grey:#9691AC;
+  --edge-off:#423C56;
+  --survol:rgba(255,255,255,.05);
+  --voile:rgba(23,21,31,.72);
   --acc-txt-mix:100%;              /* accent projet lisible tel quel sur fond sombre */
   /* Surface d'une carte teintée par son statut, et fond d'une pastille. Deux
      variables plutôt qu'un color-mix répété quinze fois : le mélange coûte un
      recalcul par carte et par instantané, soit vingt fois par seconde. */
-  --card-haut:#232130;
+  --card-haut:#2E2B41;
   /* Les ombres sont des VARIABLES DE THÈME : en sombre une ombre noire ne se
      voit pas, elle se devine, et c'est le liseré clair qui pose la carte. */
   --ombre:0 1px 2px rgba(0,0,0,.40), 0 10px 26px -14px rgba(0,0,0,.75);
@@ -63,7 +70,7 @@
      ce qui est désormais possible sans ambiguïté : --sky ne signifie plus aucun
      statut. Texte sombre dessus (contraste 8,1) : sur un violet à cette clarté,
      du blanc ne passerait pas. */
-  --pastille:#8B7CFF; --pastille-txt:#100E1A;
+  --pastille:#9A8CFF; --pastille-txt:#14111F;
   --pastille-bord:rgba(255,255,255,.34);
   /* ── LE VERRE ──────────────────────────────────────────────────────────
      Trois valeurs suffisent à faire une plaque de verre : ce qu'elle laisse
@@ -73,6 +80,26 @@
   --verre:rgba(255,255,255,.075);
   --verre-bord:rgba(255,255,255,.11);
   --verre-lustre:rgba(255,255,255,.20);
+  /* ── LES NÉONS ─────────────────────────────────────────────────────────────
+     Quatre tokens, et chacun résout SA couleur à l'endroit où il est utilisé :
+     ils lisent `--acc` (posé sur une colonne ou un groupe de projet),
+     `--accent` (l'onglet Projets, qui l'a nommé autrement) ou `--edge` (le
+     pigment d'état d'une carte ou d'une ligne). Un même token donne donc un
+     halo turquoise dans PROJET_A et ambre sur une conversation à relire, sans
+     qu'aucune règle ne connaisse une seule couleur.
+
+       --neon-pt    halo d'un point ou d'un filet d'accent
+       --neon-txt   lueur derrière un NOM de projet
+       --neon-proj  halo extérieur d'un panneau ou d'une ligne, teinte projet
+       --neon-etat  halo extérieur en pigment d'ÉTAT
+
+     Les spreads sont NÉGATIFS (-5, -6 px) : le halo est plus petit que la boîte
+     qui le porte, donc il ne bave pas sur les voisins. C'est ce qui permet d'en
+     mettre sur cinq colonnes sans que l'écran devienne une soupe de lumière. */
+  --neon-pt:0 0 9px 1px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 60%,transparent);
+  --neon-txt:0 0 13px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 50%,transparent);
+  --neon-proj:0 0 20px -6px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 45%,transparent);
+  --neon-etat:0 0 22px -5px color-mix(in srgb,var(--edge,var(--edge-off)) 55%,transparent);
 }
 :root[data-theme="clair"]{
   --chrome:#EFEDF6; --bg:#F5F4FA; --panel:#FBFAFD; --card:#FFFFFF; --line:#EAE7F2;
@@ -93,6 +120,16 @@
   --verre:rgba(255,255,255,.86);
   --verre-bord:rgba(26,24,37,.07);
   --verre-lustre:rgba(255,255,255,.95);
+  /* EN CLAIR, UN NÉON N'EXISTE PAS. Un halo lumineux sur un fond pâle ne se lit
+     pas comme de la lumière, il se lit comme un flou d'impression — le fond ne
+     peut pas être plus clair que la lueur. Les quatre tokens deviennent donc des
+     ANNEAUX teintés : spread positif, flou nul. Même parité, même rôle, même
+     couleur résolue au même endroit ; seule la matière change, exactement comme
+     les ombres, qui sont noires en sombre et grises en clair. */
+  --neon-pt:0 0 0 3px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 20%,transparent);
+  --neon-txt:none;
+  --neon-proj:0 0 0 1px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 24%,transparent);
+  --neon-etat:0 0 0 1px color-mix(in srgb,var(--edge,var(--edge-off)) 30%,transparent);
 }
 
 :root{
@@ -683,7 +720,10 @@ body{
    DEDANS, jamais des lignes qui touchent ses bords. C'est ce qui distingue un
    panneau d'une liste encadrée. */
 .col{background:var(--panel); border:1px solid var(--line); border-radius:var(--r-panneau);
-     box-shadow:var(--ombre);
+     /* L'ombre POSE le panneau, le néon lui donne son identité de projet. Les
+        deux cohabitent dans la même propriété : l'ombre d'abord (elle est
+        dessous), le halo ensuite. */
+     box-shadow:var(--ombre), var(--neon-proj);
      display:flex; flex-direction:column; min-width:0; overflow:hidden;
      padding:12px 12px 0}
 .col.glisse{opacity:.4}
@@ -698,10 +738,12 @@ body{
 .col-hd .pt{
   flex:none; width:9px; height:9px; border-radius:50%;
   background:var(--acc,var(--t3));
+  box-shadow:var(--neon-pt);
 }
 .col-hd .nm{
   font-family:var(--ui); font-size:12.5px; font-weight:700; letter-spacing:.02em;
   color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+  text-shadow:var(--neon-txt);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 /* Le compteur devient un jeton posé à droite : il se lit comme un nombre, pas
@@ -751,7 +793,9 @@ body{
   transition:border-color .18s ease-out, background-color .18s ease-out,
              box-shadow .18s ease-out, transform .18s ease-out;
 }
-.carte:hover{border-color:var(--edge-off); box-shadow:var(--ombre); transform:translateY(-1px)}
+.carte:hover{border-color:var(--edge-off);
+             box-shadow:var(--ombre), var(--neon-proj);
+             transform:translateY(-1px)}
 .carte:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
 .carte.glisse{opacity:.4}
 .carte.cible{box-shadow:inset 0 2px 0 var(--sky)}
@@ -761,9 +805,15 @@ body{
 .carte.teinte{
   background:var(--card-haut);
   border-color:color-mix(in srgb,var(--edge,var(--edge-off)) 45%,var(--line));
+  /* Une carte qui exige un acte s'allume de son pigment. C'est le seul néon
+     permanent de l'écran, et il est réservé aux deux états qui le méritent. */
+  box-shadow:var(--ombre-fine), var(--neon-etat);
 }
 /* « à relire » : la bordure seule, sans teinte de fond. Un cran en dessous. */
-.carte.review{border-color:color-mix(in srgb,var(--amber) 30%,var(--line))}
+.carte.review{border-color:color-mix(in srgb,var(--amber) 30%,var(--line));
+              box-shadow:var(--ombre-fine), var(--neon-etat)}
+/* Acquittée, la carte s'éteint : plus de bordure ambre, plus de halo. */
+.carte.review.vu{box-shadow:var(--ombre-fine)}
 .carte.vu{opacity:.85}
 
 /* ── ligne 1 : le titre, et rien d'autre ────────────────────────────────── */
@@ -816,6 +866,7 @@ body{
   padding:4px 10px; border-radius:var(--r-jeton);
   color:var(--edge,var(--t3));
   background:color-mix(in srgb,var(--edge,var(--edge-off)) 16%,transparent);
+  box-shadow:var(--neon-etat);
 }
 .pill .gl{font-size:10px; line-height:1; font-style:normal}
 /* ── « lu » : l'accusé de lecture ──────────────────────────────────────────
@@ -977,14 +1028,15 @@ body{
 .h-hd{display:flex; align-items:center; gap:12px; padding:0 0 8px;
       border-bottom:1px solid var(--line); margin-bottom:3px}
 .h-hd .nm{font-size:13px; font-weight:700; letter-spacing:.14em;
-          color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000)}
+          color:color-mix(in srgb, var(--acc,var(--t2)) var(--acc-txt-mix), #000);
+          text-shadow:var(--neon-txt)}
 .h-hd .ct{font-size:11.5px; color:var(--t3)}
 .h-row{
   display:grid; grid-template-columns:9ch minmax(0,2fr) minmax(0,1.5fr) auto 8ch 26px;
   gap:16px; align-items:baseline; padding:8px 2px;
   border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);
 }
-.h-row:hover{background:var(--survol)}
+.h-row:hover{background:var(--survol); box-shadow:var(--neon-proj)}
 .h-row .hdate{font-family:var(--donnee); font-variant-numeric:tabular-nums; font-size:11.5px; color:var(--t3); white-space:nowrap}
 .h-row .ht{font-family:var(--ui); font-size:13px; color:var(--t1);
            white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
