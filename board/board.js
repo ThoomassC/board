@@ -267,14 +267,15 @@ function creerCarte(sid) {
   // .bas et NON dans .ctx : .ctx est masquee des que ctx_pct est nul, et la
   // carte perdrait son etat avec sa jauge.
   c.innerHTML =
-    '<div class="l1"><span class="gl"></span><span class="titre"></span>' +
-      '<span class="pr-puce" hidden></span></div>' +
-    '<div class="chrono"></div>' +
-    '<div class="id"></div><div class="meta"></div><div class="dit"></div>' +
-    '<div class="bas"><span class="pill"></span>' +
-      '<span class="ctx"><span class="ctx-tr"><i></i>' +
-        '<u style="left:50%"></u><u style="left:70%"></u></span>' +
-      '<span class="ctx-n"></span></span></div>' +
+    '<div class="titre"></div>' +
+    '<div class="tech"><span class="id"></span><span class="meta"></span></div>' +
+    '<div class="dit"></div>' +
+    '<div class="bas"><span class="pill"><i class="gl"></i><b class="lib"></b></span>' +
+      '<span class="pr-puce" hidden></span>' +
+      '<span class="chrono"></span></div>' +
+    '<div class="ctx"><span class="ctx-tr"><i></i>' +
+      '<u style="left:50%"></u><u style="left:70%"></u></span>' +
+      '<span class="ctx-n"></span></div>' +
     '<button class="jeter" type="button" title="Mettre à la poubelle — la conversation quitte le board et reste dans l\'historique">⌫</button>';
 
   c.addEventListener("click", () => ouvrir(sid));
@@ -318,14 +319,20 @@ function majCarte(c, e) {
   //     racine d'un projet) -> on n'ecrit pas deux fois la meme chaine.
   const titre = (e.title || "").trim();
   const ident = (e.ident || "").trim();
+  const repo  = (e.repo  || "").trim();
   const titreUtile = titre && titre !== "(sans titre)" && titre !== ident;
+  // Troisieme garde, ajoutee apres avoir regarde l'ecran : `meta` FINIT par le
+  // depot. Quand l'identifiant EST le depot — le cas de toute session lancee
+  // depuis la racine d'un projet — la ligne technique disait deux fois la meme
+  // chose (« ProjetB · main rendue · ProjetB »). On ne l'ecrit qu'une fois.
+  const identUtile = titreUtile && ident && ident !== repo;
   texte($(".titre", c), titreUtile ? titre : ident);
-  texte($(".id", c),    titreUtile ? ident : "");
-  $(".id", c).hidden = !titreUtile;
+  texte($(".id", c),    identUtile ? ident : "");
+  $(".id", c).hidden = !identUtile;
 
   texte($(".chrono", c), e.since);
   // La pastille ecrit l'etat en clair : c'est le canal STATUT depuis Ardoise.
-  texte($(".pill", c), e.libelle);
+  texte($(".lib", c), e.libelle);
   attr(c, "title", `${e.libelle} · ${e.project} · ${e.repo || ""}`);
 
   // ── la PR de cette branche, s'il en existe une
@@ -437,8 +444,14 @@ function creerColonne(nom) {
   const col = document.createElement("section");
   col.className = "col";
   col.dataset.projet = nom;
+  // Le canal PROJET passe du filet de 2 px à un POINT de 9 px : sur un panneau
+  // arrondi de 18 px, un filet droit posé en haut se fait couper par la courbe
+  // aux deux extrémités, et il faut le regarder pour le voir. Un point se lit
+  // du premier coup d'œil, et il vit sur la même ligne que le nom qu'il
+  // qualifie. La couleur reste posée par board.js via --acc, comme avant.
   col.innerHTML = '<header class="col-hd" draggable="true">' +
-                  '<span class="nm"></span><span class="ct"></span></header>' +
+                  '<i class="pt"></i><span class="nm"></span>' +
+                  '<span class="ct"></span></header>' +
                   '<div class="cartes"></div>';
   brancherGlisserColonne(col);
   return col;
@@ -512,6 +525,22 @@ function rendBoard(snap) {
     hote.querySelectorAll(".carte").forEach(c => {
       if (!vuesC.has(c.dataset.sid)) c.remove();
     });
+    // Colonne vide : on dit que le projet est PRÊT, et comment l'ouvrir. Sans
+    // ça, une colonne sans carte ressemble à une panne d'affichage. Le nom du
+    // lanceur se déduit du nom de projet — c'est la règle qu'applique
+    // _poser_lanceur() côté serveur (« claude-» + nom en minuscules).
+    let vide = $(".vide-col", hote);
+    if (!(g.sessions || []).length && g.project !== snap.fallback) {
+      if (!vide) {
+        vide = el("div", "vide-col");
+        vide.append(document.createTextNode("Aucune conversation ouverte"),
+                    el("code", null, "claude-" + g.project.toLowerCase()));
+        hote.append(vide);
+      }
+      vide.style.order = "9999";
+    } else if (vide) {
+      vide.remove();
+    }
     hote.style.display = "flex"; hote.style.flexDirection = "column";
   });
   board.querySelectorAll(".col").forEach(col => {

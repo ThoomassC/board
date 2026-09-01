@@ -78,20 +78,25 @@
    CETTE seule propriété, le reste de la règle de board.css ne bouge pas. */
 .col{
   position:relative;   /* nécessaire à .col::after (bord de table) */
+  /* ── LE GRAIN EST ÉTEINT (01/09, direction Ardoise) ──────────────────────
+     Deux calques de dégradé posaient un grain de bois sur le panneau. Ardoise a
+     détaché les cartes du panneau : une colonne peu remplie expose désormais de
+     grandes surfaces nues, où le grain se lisait comme un défaut de rendu et
+     non comme une matière — je l'ai d'abord baissé de 35 % à 22 %, ça ne
+     suffisait pas. La direction repose sur des surfaces LISSES et une ombre :
+     une texture y est un bruit, pas un décor.
+     Le code est conservé et non supprimé : décommenter les quatre lignes
+     ci-dessous rallume le grain, et les sept variables --sv-* restent à jour
+     dans les deux thèmes. Le bord de table, lui, reste : c'est un liseré, pas
+     une texture, et il donne l'épaisseur du panneau.
   background-image:
-    /* Le grain a été BAISSÉ de 35 % à 22 % et espacé de 34 à 52 px le 01/09.
-       Raison : Ardoise a détaché les cartes du panneau, et une colonne peu
-       remplie expose désormais de grandes surfaces de panneau nu — là où le
-       grain était auparavant couvert par une liste pleine. À l'ancienne
-       densité, la texture cessait de se deviner et se lisait comme un défaut
-       de rendu. Une texture de décor doit rester sous le seuil de la question
-       « c'est un bug ? ». */
     repeating-linear-gradient(100deg,
       color-mix(in srgb, var(--sv-bois-2) 22%, transparent) 0 2px,
       transparent 2px 52px),
     linear-gradient(180deg,
       color-mix(in srgb, var(--sv-bois-1) 28%, transparent) 0%,
       transparent 46%);
+  */
 }
 
 /* Bord de table : une ombre très fine posée en overlay (pas un enfant flex,
@@ -114,11 +119,17 @@
    découpe. Un biseau vif inscrit dans un congé, ce sont deux langages de coin
    contradictoires dans les mêmes pixels, et le clip n'en laissait survivre
    qu'un éclat asymétrique. L'arrondi du panneau dit désormais le coin. */
+/* ── LE LAVIS DE L'EN-TÊTE EST ÉTEINT ────────────────────────────────────────
+   Il habillait une BANDE : l'en-tête avait un filet bas, un padding propre et
+   une surface distincte. Ardoise en a fait une simple ligne de titre posée dans
+   le rembourrage du panneau — il n'y a plus de boîte à habiller, et un dégradé
+   sur une ligne de texte se lit comme un artefact.
 .col-hd{
   position:relative;
   background-image:linear-gradient(180deg, var(--sv-bois-2) 0%, transparent 72%);
   box-shadow:inset 0 -1px 0 var(--sv-lisere);
 }
+*/
 
 
 /* ═══════════════════════ bureau du professeur (.ch-d) ═════════════════════

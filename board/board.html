@@ -17,17 +17,22 @@
 
 <header class="chrome">
   <div class="ch-g">
-    <!-- La marque reprend le favicon : trois colonnes. Elle est tracée en
-         currentColor, donc dans l'encre neutre du mot-marque — la barre
-         n'accueille aucun pigment, et surtout pas l'indigo des pastilles, qui
-         signifie « il y a du travail » à deux centimètres de là. -->
-    <svg class="marque" viewBox="0 0 32 32" width="15" height="15"
-         aria-hidden="true" focusable="false">
-      <rect x="3"  y="8" width="6" height="16" rx="2" fill="currentColor"/>
-      <rect x="13" y="8" width="6" height="16" rx="2" fill="currentColor"/>
-      <rect x="23" y="8" width="6" height="16" rx="2" fill="currentColor"/>
-    </svg>
-    <span class="brand">BOARD</span>
+    <!-- La marque reprend le favicon : trois colonnes, dans un jeton violet.
+         Le commentaire précédent interdisait ici tout pigment, « et surtout pas
+         l'indigo des pastilles, qui signifie il y a du travail ». Sa prémisse a
+         disparu avec Ardoise : --sky ne signifie plus AUCUN état, il est
+         l'accent du chrome et rien d'autre. Le jeton violet est donc de
+         l'identité, pas un statut — et c'est le seul endroit de la barre qui
+         porte l'accent en aplat. -->
+    <span class="marque-b" aria-hidden="true">
+      <svg class="marque" viewBox="0 0 32 32" width="14" height="14"
+           focusable="false">
+        <rect x="3"  y="8" width="6" height="16" rx="2" fill="currentColor"/>
+        <rect x="13" y="8" width="6" height="16" rx="2" fill="currentColor"/>
+        <rect x="23" y="8" width="6" height="16" rx="2" fill="currentColor"/>
+      </svg>
+    </span>
+    <span class="brand">Board</span>
   </div>
 
   <nav class="onglets" role="tablist">
@@ -91,10 +96,6 @@
 </section>
 
 <footer class="legende">
-  <span><i style="background:var(--red)"></i>✋ bloqué — attend ton OK · ✖ erreur</span>
-  <span><i style="background:var(--amber)"></i>➜ à relire</span>
-  <span><i style="background:var(--grey)"></i>⋯ silence</span>
-  <span><i style="background:var(--green)"></i>● au travail</span>
   <span id="legende-muet" hidden></span>
   <span class="fin" id="legende-fin">⌫ = poubelle · glisser pour réordonner</span>
 </footer>

@@ -692,8 +692,15 @@ class Board:
         if impose:
             ordre = [n for n in impose if n in ordre or n == repli] + \
                     [n for n in ordre if n not in impose]
+        # TOUS LES PROJETS DÉCLARÉS ONT LEUR COLONNE, occupée ou non.
+        # Avant, une colonne n'existait qu'à partir de sa première conversation :
+        # un projet qu'on vient de créer était donc invisible sur l'écran censé
+        # dire où on en est. La colonne vide n'est pas du vide, elle dit « ce
+        # projet est prêt » et porte le nom de son lanceur.
+        # Le REPLI reste conditionnel : une colonne « AUTRE » vide ne dirait
+        # rien, puisqu'on ne déclare pas ce seau, on y tombe.
         presents = {e["project"] for e in els}
-        colonnes = [n for n in ordre if n in presents]
+        colonnes = [n for n in ordre if n != repli]
         for n in sorted(presents):
             if n not in colonnes and n != repli:
                 colonnes.append(n)
