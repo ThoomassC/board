@@ -30,6 +30,35 @@ conversations ouvertes **117,62 $**.
 
 ---
 
+## Livré le 02/09 — six retouches nées d'un second passage
+
+Aucune ne figurait dans cet audit, et trois n'existaient pas quand il a été
+écrit : elles sont nées de ce qu'il a fait réparer. Mesurées sur l'instantané du
+02/09, maquettées avant/après, puis livrées.
+
+| | Défaut | Où |
+|---|---|---|
+| **D7** | Le bandeau n'affichait que `ident` : deux conversations d'un même dépôt y étaient indiscernables. `title` et `repo` le rejoignent, et la règle du titre est factorisée dans `nomLisible()`. | `serveur.py`, `board.js`, `board.css` |
+| **D8** | La phrase de la carte affichait le Markdown brut — conséquence directe de la réparation de `last_say` (F1), invisible tant que le champ était vide. Dé-balisage dans le capteur, **avant** la troncature. | `sensors/board-event.py` |
+| **F8** | Les sous-agents ne se voyaient qu'en ouvrant la fiche, et la ligne technique répétait la pastille au lieu de porter le modèle et le coût. | `serveur.py`, `board.js`, `board.css` |
+| **D9** | `mode-L` gardait la typographie du cas dense et collait les colonnes à gauche : 42 % de la zone occupée, mesuré à 1600×950. Centré, un cran de type. | `board.css` |
+| **D10** | « 3 sessions » sous un onglet « Conversations ». Règle posée : *session* dans le code, *conversation* à l'écran. | `board.js`, `board.html` |
+| **D11** | L'aveu « aucun pane suivi » (demandé par D6) avait atterri dans la ligne la moins lue de l'écran. Il passe sous le bouton qu'il explique. | `board.js`, `board.html`, `fiche.css` |
+
+Deux écarts assumés par rapport aux maquettes, tous deux au nom d'une règle de
+ce dépôt :
+
+  · **D7** — le libellé d'état (« a rendu la main ») a été CONSERVÉ dans le
+    jeton, atténué, là où la maquette le retirait. Une couleur de statut ne
+    voyage jamais sans son glyphe et son libellé.
+  · **D9** — un cran de typographie et non deux : la maquette annonçait 19 px
+    en partant d'une base supposée à 17, alors que `.titre` vaut 14,5 px. À
+    19 px les intitulés longs gagnaient une ligne et la carte enflait.
+
+Et un défaut trouvé **en livrant**, pas en auditant : `meta` servait aussi de
+phrase d'état à la fiche, qui a donc affiché « Opus 5 » sous « en ce moment » le
+temps d'une itération. D'où le champ `attente`, séparé — cf. `docs/SCHEMA.md`.
+
 ## 1. Design / lisibilité
 
 ### D1 — Inverser la hiérarchie de la carte : le titre d'abord, l'identifiant ensuite
