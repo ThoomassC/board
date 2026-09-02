@@ -185,6 +185,66 @@ function rendFlux() {
    pigment restant porté par le glyphe de chaque bouton. */
 let attTout = false;      // « +N autres » déplié — geste de l'utilisateur, jamais du système
 
+/* ─────────────────────── LES DEUX JETONS DU BANDEAU ─────────────────────────
+   Le bandeau porte deux genres d'entrées depuis que l'onglet Projets y a été
+   fusionné (02/09) : les CONVERSATIONS, qu'il nomme une par une, et les ITEMS
+   — une PR en conflit, des fichiers non commités — qu'il ne savait pas voir.
+   Le serveur dit lequel par `genre` : rien ici ne le devine.
+
+   Ils partagent la géométrie de `.att` et ne se distinguent que par ce qu'un
+   clic fait, parce que c'est la seule chose qui diffère vraiment : une
+   conversation ouvre sa fiche, un item mène là où il se traite. */
+function jetonConv(e) {
+  const b = document.createElement("button");
+  b.className = "att";
+  b.type = "button";
+  // L'identifiant quitte le jeton et rejoint l'infobulle : c'est lui qui
+  // rendait deux conversations d'un même dépôt indiscernables ici.
+  b.title = `${e.project} · ${e.libelle}` + (e.ident ? ` · ${e.ident}` : "");
+  // Le glyphe garde le pigment d'état ; le NOM prend l'encre primaire. Le
+  // libellé reste, atténué : le contrat interdit qu'une couleur de statut
+  // voyage sans son glyphe ET son libellé, et « ✋ » seul demanderait au
+  // lecteur de connaître quatre glyphes par cœur.
+  const g = el("b", null, e.glyphe);
+  g.style.color = EDGE[e.state] || "var(--t1)";
+  b.append(g, el("span", "nom", nomLisible(e).nom),
+           el("span", "quoi",
+              e.state === "blocked" ? "attend ton OK"
+            : e.state === "error" ? "erreur"
+            : e.state === "silent" ? "muette" : "a rendu la main"),
+           el("span", "d", e.since));
+  b.onclick = () => ouvrir(e.sid);
+  return b;
+}
+
+// Pigment d'un item : le NIVEAU vient du serveur, la couleur en découle ici —
+// la même table que partout, pour qu'un ambre veuille dire la même chose dans
+// le bandeau et sur une carte.
+const ATT_NIVEAU = { bloque:"var(--red)", agir:"var(--amber)",
+                     attente:"var(--amber)", fait:"var(--green)", info:"var(--t3)" };
+
+function jetonItem(e) {
+  // Une PR porte une URL : le jeton devient un lien, et le clic sort du board.
+  // Sinon il mène à l'onglet qui détaille la chose — `onglet` est envoyé par le
+  // serveur, le board ne lit pas le préfixe d'une clé pour le deviner.
+  const lien = !!e.url;
+  const b = document.createElement(lien ? "a" : "button");
+  b.className = "att item";
+  if (lien) { b.href = e.url; b.target = "_blank"; b.rel = "noopener"; }
+  else b.type = "button";
+  b.title = `${e.project || ""} · ${e.action || ""}`.trim().replace(/^· /, "");
+  const g = el("b", null, e.glyphe || "·");
+  g.style.color = ATT_NIVEAU[e.niveau] || "var(--t3)";
+  b.append(g, el("span", "nom", e.texte || ""));
+  if (e.detail) b.append(el("span", "quoi", e.detail));
+  // Pas de chrono : un item n'a pas d'âge propre — c'est un agrégat. À la
+  // place, ce qu'il faut faire, qui est la seule chose qu'on veut savoir de
+  // plus. Le serveur l'a déjà rédigé (`action`).
+  if (e.action) b.append(el("span", "d", e.action));
+  if (!lien && e.onglet) b.onclick = () => ongler(e.onglet);
+  return b;
+}
+
 function rendAttention(snap) {
   const zone = $("#attention");
   const liste = snap.attention || [];
@@ -228,29 +288,8 @@ function rendAttention(snap) {
   // Plafonnée à 3 entrées PAR DÉFAUT : au-delà, le bandeau crie et ne dit plus
   // rien. Mais le plafond se lève sur un geste, ce que la doctrine autorise —
   // c'est le système qui n'a pas le droit de décider, pas l'utilisateur.
-  for (const e of liste.slice(0, attTout ? liste.length : 3)) {
-    const b = document.createElement("button");
-    b.className = "att";
-    b.type = "button";
-    // L'identifiant quitte le jeton et rejoint l'infobulle : c'est lui qui
-    // rendait deux conversations d'un même dépôt indiscernables ici.
-    b.title = `${e.project} · ${e.libelle}` + (e.ident ? ` · ${e.ident}` : "");
-    // Le glyphe garde le pigment d'état ; le NOM prend l'encre primaire. Le
-    // libellé reste, atténué : le contrat interdit qu'une couleur de statut
-    // voyage sans son glyphe ET son libellé, et « ✋ » seul demanderait au
-    // lecteur de connaître quatre glyphes par cœur.
-    const g = el("b", null, e.glyphe);
-    g.style.color = EDGE[e.state] || "var(--t1)";
-    const n = el("span", "nom", nomLisible(e).nom);
-    const l = el("span", "quoi",
-                 e.state === "blocked" ? "attend ton OK"
-               : e.state === "error" ? "erreur"
-               : e.state === "silent" ? "muette" : "a rendu la main");
-    const d = el("span", "d", e.since);
-    b.append(g, n, l, d);
-    b.onclick = () => ouvrir(e.sid);
-    zone.append(b);
-  }
+  for (const e of liste.slice(0, attTout ? liste.length : 3))
+    zone.append(e.genre === "item" ? jetonItem(e) : jetonConv(e));
   if (liste.length > 3) {
     // C'était un <span> sans clic, sans survol et non focusable : un texte qui
     // ressemble à une troncature et promet une action qu'il ne tient pas.
@@ -432,9 +471,13 @@ function majCarte(c, e) {
   const meta = $(".meta", c);
   meta.textContent = "";
   if (e.stale) {
+    // Le reste de la ligne reste `meta`, comme partout ailleurs. Ce chemin
+    // ajoutait `repo` en dur, ce qui redonnait le nom de la colonne au moment
+    // même où `meta` a cessé de le répéter — deux règles pour une seule ligne.
     const h = document.createElement("span");
     h.className = "hachure"; h.textContent = "oubliée ?";
-    meta.append(h, document.createTextNode(" · " + (e.repo || "")));
+    meta.append(h);
+    if (e.meta) meta.append(document.createTextNode(" · " + e.meta));
   } else {
     meta.textContent = e.meta || "";
   }
@@ -931,134 +974,10 @@ function rendHistorique(d) {
    impossible : la table est la seule source, et le câblage des clics en découle. */
 const PANNEAUX = {
   board:    { panneau:"#board",    onglet:"#ong-board" },
-  projets:  { panneau:"#projets",  onglet:"#ong-projets" },
   pr:       { panneau:"#prs",      onglet:"#ong-pr" },
   chantier: { panneau:"#chantier", onglet:"#ong-chantier" },
   histo:    { panneau:"#histo",    onglet:"#ong-histo" },
 };
-
-/* ═══════════════════════════ Projets ═════════════════════════════════════
-   L'axe qui manquait. Les quatre autres onglets rangent par TYPE D'OBJET ;
-   celui-ci range par projet, et à l'intérieur par QUI TIENT LA BALLE.
-
-   Il ne fait aucun appel de plus : /api/projets relit les caches de /api/pr et
-   /api/chantier. Ouvrir cet onglet ne coûte donc pas un scan Azure DevOps.
-
-   Règle tenue comme ailleurs : les libellés, l'ordre et les glyphes viennent du
-   serveur. Ce fichier n'invente pas un mot — s'il le faisait, deux onglets
-   pourraient nommer le même état différemment. */
-function majBadgeProjets(n) {
-  const b = $("#pj-badge");
-  if (!b) return;
-  b.hidden = false;
-  if (!(n > 0)) { classe(b, "vide", true); texte(b, "0"); return; }
-  classe(b, "vide", false);
-  texte(b, String(n));
-  // La pastille ne compte QUE le seau « à toi ». Compter les trois seaux
-  // afficherait un nombre qui ne baisse jamais — 12 arbres libérables ne sont
-  // pas une dette, c'est du stock, et une pastille permanente ne veut plus
-  // rien dire (c'est le piège dans lequel `a_traiter` de l'onglet PR est tombé).
-  attr(b, "title", n + (n > 1 ? " choses t'attendent" : " chose t'attend")
-       + " — rien n'avance dessus sans un geste de ta part");
-}
-
-function ligneProjet(item) {
-  // Une PR porte une URL : la ligne devient un lien. Le reste ne mène nulle
-  // part, et c'est assumé — cet onglet montre et amène, il n'exécute rien.
-  const n = item.url ? el("a", "pj-item " + (item.niveau || "info"))
-                     : el("div", "pj-item " + (item.niveau || "info"));
-  if (item.url) { attr(n, "href", item.url); attr(n, "target", "_blank");
-                  attr(n, "rel", "noopener"); }
-  n.append(el("i", null, item.glyphe || "·"));
-  const t = el("span", "txt");
-  t.append(document.createTextNode(item.texte || ""));
-  if (item.detail) t.append(el("span", "det", item.detail));
-  n.append(t);
-  return n;
-}
-
-function rendProjets(d) {
-  const zone = $("#projets");
-  zone.textContent = "";
-  majBadgeProjets(d.a_traiter || 0);
-
-  const ordre = d.ordre || [];
-  const libelles = d.libelles || {};
-
-  const tete = el("div", "pj-tete");
-  const n = d.a_traiter || 0;
-  tete.append(el("span", "gros", String(n)),
-              el("span", "lbl", n === 1 ? "chose t'attend" : "choses t'attendent"));
-  const frais = el("span", "pj-frais");
-  // On affiche toujours l'âge de ce qu'on montre : les deux scans sous-jacents
-  // sont servis depuis un cache, et un chiffre sans âge se ferait passer pour
-  // frais alors qu'il peut avoir trente secondes.
-  frais.textContent = d.age_s ? "relevé il y a " + d.age_s + " s" : "relevé à l'instant";
-  tete.append(frais);
-  const btn = el("button", "pj-refresh", "rafraîchir");
-  btn.onclick = () => chargerProjets(true);
-  tete.append(btn);
-  zone.append(tete);
-
-  if (d.degrade) zone.append(el("p", "pj-degrade", d.degrade));
-  // `sessions === null` côté chantier : aucun arbre ne peut être dit « en
-  // cours ». Le taire donnerait un board faussement calme.
-  if (d.conversations_inconnues)
-    zone.append(el("p", "pj-degrade",
-      "conversations inconnues : l'état « en cours » des arbres est incomplet"));
-
-  const projets = d.projets || [];
-  if (!projets.length) {
-    zone.append(el("p", "pj-vide", "aucun projet à afficher"));
-    return;
-  }
-
-  for (const p of projets) {
-    const bande = el("section", "pj-bande");
-    if (p.accent) bande.style.setProperty("--accent", p.accent);
-
-    const hd = el("div", "pj-hd");
-    hd.append(el("span", "pj-nom", p.project));
-    const c = p.compte || {};
-    hd.append(el("span", "pj-compte",
-      [c.sessions ? c.sessions + (c.sessions > 1 ? " convs" : " conv") : null,
-       c.prs ? c.prs + " PR" : null,
-       c.arbres ? c.arbres + (c.arbres > 1 ? " arbres" : " arbre") : null]
-        .filter(Boolean).join(" · ")));
-    if (p.prochaine) {
-      const pr = el("span", "pj-prochaine " + (p.prochaine.niveau || "info"));
-      pr.append(el("i", null, p.prochaine.glyphe || "·"),
-                el("span", null, p.prochaine.texte || ""));
-      hd.append(pr);
-    }
-    bande.append(hd);
-
-    const seaux = el("div", "pj-seaux");
-    for (const cle of ordre) {
-      const col = el("div", "pj-seau");
-      col.append(el("div", "pj-seau-hd", libelles[cle] || cle));
-      const items = (p.seaux || {})[cle] || [];
-      if (!items.length) col.append(el("div", "pj-rien", "rien"));
-      else for (const it of items) col.append(ligneProjet(it));
-      seaux.append(col);
-    }
-    bande.append(seaux);
-    zone.append(bande);
-  }
-}
-
-async function chargerProjets(force) {
-  const zone = $("#projets");
-  if (!zone.dataset.charge) {
-    zone.textContent = "";
-    zone.append(el("p", "pj-vide", "synthèse par projet…"));
-  }
-  let d;
-  try { d = await (await fetch("/api/projets" + (force ? "?force=1" : ""))).json(); }
-  catch { d = { projets: [], a_traiter: 0, degrade: "serveur injoignable" }; }
-  zone.dataset.charge = "1";
-  rendProjets(d);
-}
 
 /* ═════════════════════════ Pull Requests ═════════════════════════════════
    Les données coûtent 12 appels réseau : le serveur rend son cache tout de
@@ -1886,7 +1805,6 @@ function ongler(quel) {
   // Le bandeau d'attention ne concerne que les conversations : ailleurs il
   // mentirait sur ce que l'écran montre.
   $("#attention").hidden = quel !== "board";
-  if (quel === "projets") chargerProjets(false);
   if (quel === "histo") chargerHistorique();
   if (quel === "pr") chargerPR(false);
   if (quel === "chantier") chargerChantier(false);
@@ -1900,7 +1818,7 @@ function appliquer(snap) {
   // demie pour rien. On les réveille ici, à la milliseconde où l'attente cesse.
   const premier = !dernier;
   dernier = snap; dernierAt = Date.now();
-  if (premier) { sondeChantier(); sondeProjets(); }
+  if (premier) sondeChantier();
   rendChrome(snap);
   if (ongletActif === "board") { rendAttention(snap); rendBoard(snap); }
   rendFlux();
@@ -2329,25 +2247,11 @@ async function sondeChantier() {
 }
 sondeChantier();
 
-/* La pastille Projets, elle, n'avait AUCUNE sonde : elle ne se peignait qu'en
-   ouvrant l'onglet, donc jamais. Or c'est la seule qui compte ce qui t'attend
-   vraiment — celle qui a le plus de raisons d'être juste sans rien ouvrir.
-   /api/projets relit les caches de /api/pr et /api/chantier : sonder ici
-   n'ajoute aucun appel réseau ni aucune commande git. */
-let sondePjTimer = null;
-async function sondeProjets() {
-  clearTimeout(sondePjTimer);          // idem : jamais deux sondages en vol
-  if (!dernier) {          // même dépendance aux conversations que le Chantier
-    sondePjTimer = setTimeout(sondeProjets, 200);
-    return;
-  }
-  try {
-    const d = await (await fetch("/api/projets")).json();
-    majBadgeProjets(d.a_traiter || 0);
-  } catch {}
-  sondePjTimer = setTimeout(sondeProjets, 180000);
-}
-sondeProjets();
+/* La pastille Projets a disparu avec son onglet le 02/09 : ce qu'elle comptait
+   — les choses qui t'attendent — est maintenant DANS le bandeau, nommé, au lieu
+   d'être un nombre sur un onglet qu'il fallait ouvrir pour le comprendre. Voir
+   server/attente.py. La sonde du chantier, elle, reste : elle réchauffe le
+   cache que le bandeau lit à chaque instantané. */
 
 let sondeTimer = null;
 async function sondePR() {

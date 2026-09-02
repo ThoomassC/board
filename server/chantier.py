@@ -501,6 +501,23 @@ def _habiller(arbres, config, maintenant):
     return groupes
 
 
+def dernier():
+    """Le dernier relevé SI le cache est frais, sinon None. NE BALAIE JAMAIS.
+
+    Existe pour le bandeau d'attention, qui se construit à chaque instantané —
+    une fois par seconde. `scan()` y est interdit : il lance un balayage git de
+    tous les arbres dès que le cache expire, et la boucle SSE n'a pas à payer
+    ça. None veut dire « on ne sait pas encore », et le bandeau se contente
+    alors de ce qu'il sait — il ne prétend rien.
+    """
+    with _VERROU:
+        if _CACHE["data"] is None or (time.time() - _CACHE["at"]) >= TTL:
+            return None
+        d = dict(_CACHE["data"])
+        d["age_s"] = int(time.time() - _CACHE["at"])
+        return d
+
+
 def scan(config, sessions=None, us_de=None, force=False):
     """L'inventaire complet, servi depuis un cache de 30 s.
 

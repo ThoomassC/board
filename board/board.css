@@ -577,7 +577,28 @@ body{
 .att .quoi{color:var(--t2); flex:none}
 .att .d{color:var(--t3); flex:none}
 /* Le jeton peut rétrécir, mais jamais en dessous de quoi rester lisible. */
-.att{min-width:0; max-width:min(420px,100%)}
+/* 560 et non 420 px : la borne avait été calée sur un jeton de conversation
+   (glyphe, nom, état, chrono). Un jeton d'item en porte un de plus — son détail
+   ET son action — et se faisait couper au milieu (« 8 fichiers non commités
+   dans … ») alors qu'il restait 400 px de bandeau libre à droite. */
+.att{min-width:0; max-width:min(560px,100%)}
+
+/* ── LES JETONS D'ITEM : PR, ARBRES ─────────────────────────────────────────
+   Le bandeau porte deux genres depuis la fusion de l'onglet Projets (02/09).
+   Ils partagent volontairement la MÊME forme : c'est une seule file d'attente,
+   et deux formes auraient suggéré deux lectures. Ce qui les distingue est déjà
+   dans le contenu — le glyphe prend le pigment du niveau, et le dernier segment
+   dit ce qu'il faut faire (« commiter », « fusionner ») là où une conversation
+   affiche son chrono.
+
+   Un jeton de PR est un <a> : il faut donc lui retirer ce qu'un lien apporte de
+   lui-même, sans quoi il serait le seul souligné et bleu du bandeau. */
+a.att{text-decoration:none; color:inherit}
+a.att:hover{text-decoration:none}
+/* Le dernier segment d'un item est une ACTION, pas une durée : pas de chiffres
+   tabulaires ni de largeur réservée, et l'italique la distingue d'un libellé
+   d'état. */
+.att.item .d{font-style:italic; color:var(--t3)}
 /* Un vrai bouton, avec les états interactifs de .att : il était un <span> sans
    clic, sans survol et non focusable au clavier — un texte qui ressemble à une
    troncature et promet une action qu'il ne tient pas. */

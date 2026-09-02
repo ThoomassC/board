@@ -9,7 +9,6 @@
 <link rel="stylesheet" href="board.css">
 <link rel="stylesheet" href="onglet-pr.css">
 <link rel="stylesheet" href="onglet-chantier.css">
-<link rel="stylesheet" href="onglet-projet.css">
 <link rel="stylesheet" href="fiche.css">
 <link rel="stylesheet" href="board-visuel.css">
 </head>
@@ -43,8 +42,6 @@
     <span class="curseur" aria-hidden="true"></span>
     <button class="onglet" id="ong-board" role="tab" aria-selected="true"
             aria-controls="board">Conversations</button>
-    <button class="onglet" id="ong-projets" role="tab" aria-selected="false"
-            aria-controls="projets">Projets<span class="pastille vide" id="pj-badge">0</span></button>
     <button class="onglet" id="ong-pr" role="tab" aria-selected="false"
             aria-controls="prs">Pull Requests<span class="pastille vide" id="pr-badge">0</span></button>
     <button class="onglet" id="ong-chantier" role="tab" aria-selected="false"
@@ -81,8 +78,6 @@
 </div>
 
 <main class="board" id="board" role="tabpanel" aria-labelledby="ong-board"></main>
-
-<section class="projets" id="projets" role="tabpanel" aria-labelledby="ong-projets" hidden></section>
 
 <section class="prs" id="prs" role="tabpanel" aria-labelledby="ong-pr" hidden></section>
 
@@ -160,6 +155,23 @@
       <li><b>● au travail</b> — sans couleur, à dessein&nbsp;: il n'y a rien à faire.</li>
     </ul>
 
+    <h3>Le bandeau du haut</h3>
+    <p>La file d'attente, et la seule zone de l'écran triée par <b>urgence</b> et
+      non par projet. Elle ne contient que ce qui <b>n'avance pas sans toi</b>&nbsp;:
+      une conversation bloquée passe avant une pull request en conflit, qui passe
+      avant des fichiers non commités, qui passent avant une conversation qui a
+      rendu la main. Ce qui est chez quelqu'un d'autre ou qui ne fait
+      qu'encombrer n'y entre pas — ça se lit dans les onglets Pull Requests et
+      Chantier.</p>
+    <p>Un jeton de conversation ouvre sa fiche. Un jeton de <b>pull request</b>
+      ouvre la PR dans le navigateur&nbsp;; un jeton d'<b>arbre</b> amène à
+      l'onglet Chantier. Au-delà de trois, <b>+N</b> déroule le reste — le
+      bandeau ne cache rien, il attend qu'on le lui demande.</p>
+    <p>Il y avait un cinquième onglet, « Projets », qui rangeait ces mêmes choses
+      par projet. Il disait une ligne pour deux projets, déjà lisible deux fois
+      ailleurs&nbsp;: son contenu est ici, nommé, au lieu d'être un nombre sur un
+      onglet qu'il fallait ouvrir pour le comprendre.</p>
+
     <h3>Les deux jauges du haut</h3>
     <p>Tes quotas 5 h et 7 j, avec le temps restant avant réinitialisation. Le petit
       trait vertical sur chaque jauge est le <b>repère de rythme</b>&nbsp;: il marque
@@ -190,11 +202,8 @@
         un lanceur <code>claude-nomprojet</code> dans <code>~/.local/bin</code>.</li>
     </ul>
 
-    <h3>Les cinq onglets</h3>
-    <p><b>Projets</b>, la synthèse : par projet, qui tient la balle et quelle est
-      ta prochaine action. C'est le seul onglet organisé par projet plutôt que par
-      type d'objet — il ne montre rien de neuf, il range ce que les autres
-      dispersent. <b>Conversations</b>, celles qui sont ouvertes en ce moment. <b>Pull Requests</b>, ce qui t'attend
+    <h3>Les quatre onglets</h3>
+    <p><b>Conversations</b>, celles qui sont ouvertes en ce moment. <b>Pull Requests</b>, ce qui t'attend
       sur Azure DevOps, trié par ce que tu dois faire plutôt qu'en liste plate.
       <b>Chantier</b>, tous tes arbres de travail — y compris ceux qu'aucune
       conversation n'occupe, qui sont la grande majorité.
