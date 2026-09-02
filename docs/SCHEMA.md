@@ -111,13 +111,66 @@ plus bas. Le serveur la construit en fusionnant event + meas + config.
       "state": "blocked",           working|blocked|review|silent|error
       "since_s": 252,               secondes dans l'état courant (calculé serveur)
       "aging": false, "stale": false,
-      "meta": "attend une autorisation · Bash · EDI_backend",
+      "meta": "Bash · EDI_backend · Opus 5",     ligne technique de la CARTE
+      "attente": "attend une autorisation",      ce que la conversation attend
+      "cout": "38,4 $",             "" tant que le coût est sous son seuil
+      "cout_fort": true,            au-delà du second seuil -> ambre
+      "agents": 3,                  sous-agents au travail, 0, ou null (inconnu)
       "say": "Je relance le pipeline EDI...",
       "ctx_pct": 41.0,
       "ctx_level": "ok",            ok|warn|crit  (seuils de config)
       "seen": false,
       "pane": 1                     index de pane, ou null
     }
+
+### `meta` et `attente` sont deux champs parce qu'ils ont deux lecteurs
+
+`meta` était `"attend une autorisation · Bash · EDI_backend"` : sur la carte, le
+premier segment répétait la pastille posée juste en dessous et le dernier
+répétait le nom de la colonne posé juste au-dessus. Une ligne entière pour ne
+rien apprendre, pendant que le modèle et le coût — 38,44 $ sur une conversation,
+mesuré le 02/09 — n'étaient nulle part alors qu'ils voyagent depuis toujours
+dans la charge utile.
+
+    meta      ligne technique de la CARTE. Le premier segment ne survit que
+              lorsqu'il APPREND quelque chose : l'outil si l'on travaille, la
+              raison si l'on a cassé. Le dépôt n'y figure que s'il diffère du
+              nom de la colonne. Puis le modèle, abrégé (« Opus 5 »).
+    attente   la phrase d'état, pour la FICHE : sa section « en ce moment » n'a
+              aucune pastille sous les yeux quand aucun outil n'est en vol.
+
+Une seule règle, côté serveur, deux consommateurs. Le board n'invente ni ne
+recompose aucun de ces deux libellés — et surtout, il ne se sert pas de l'un
+pour l'autre : la fiche a affiché « Opus 5 » sous « en ce moment » le temps
+d'une itération, pour l'avoir fait.
+
+### `cout` — un compteur permanent culpabilise au lieu d'informer
+
+Le serveur envoie un TEXTE déjà formaté (virgule décimale) et un booléen, pas un
+nombre : c'est lui qui décide si le chiffre mérite sa place, et le board n'a
+aucun seuil en dur. Deux seuils, dans `thresholds` :
+
+    cout_visible_usd   10    en dessous, `cout` vaut "" — rien ne s'affiche
+    cout_fort_usd      25    au-delà, `cout_fort` -> l'ambre
+
+L'ambre ne vole pas le canal STATUT : il vit sur un mot de 11 px dans la ligne
+la plus discrète de la carte, jamais sur le bord gauche ni sur la pastille.
+
+### `agents` — trois valeurs, et le null compte
+
+    null   on ne sait pas : module absent, transcript introuvable ou illisible
+    0      aucun agent au travail
+    n > 0  n agents en vol
+
+`null` et `0` ne s'affichent ni l'un ni l'autre : une puce permanente ne veut
+plus rien dire, c'est le piège où `a_traiter` est déjà tombé. Le calcul lit le
+transcript, donc il coûte — voir `serveur.agents_au_travail` : cache de 6 s ET
+**budget de 25 ms par tour d'instantané**. Le TTL seul ne suffisait pas : à son
+expiration toutes les conversations redevenaient périmées en même temps, et le
+tour suivant les relisait toutes. Mesuré : 89 ms pour 4 conversations (9,7 Mo),
+soit près d'une demi-seconde à vingt — un board qui hoquette une fois toutes les
+six secondes. Avec le budget, le pire tour est retombé à 33 ms à vingt
+conversations, et toutes sont revues en trois tours.
 
 ### Extraction du n° d'US — règle STRICTE, ne pas relâcher
 

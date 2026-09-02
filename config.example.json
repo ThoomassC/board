@@ -6,7 +6,8 @@
   "fallback_project": "AUTRE",
   "thresholds": {
     "ctx_warn": 50, "ctx_crit": 70,
-    "silent_after_s": 90, "aging_after_s": 300, "stale_after_s": 900
+    "silent_after_s": 90, "aging_after_s": 300, "stale_after_s": 900,
+    "cout_visible_usd": 10, "cout_fort_usd": 25
   },
   "notify": {"enabled": true, "quiet_hours": [22, 8]},
   "panes": {},

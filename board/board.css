@@ -1590,6 +1590,41 @@ dialog#aide::backdrop{background:var(--voile)}
   background:color-mix(in srgb, currentColor 12%, transparent);
 }
 .pr-puce[hidden]{display:none}
+
+/* ═════════════════════ LES SOUS-AGENTS AU TRAVAIL ════════════════════════
+   Même géométrie que la puce de PR — même famille d'objet, même place dans
+   `.bas`, donc aucune raison d'inventer une seconde forme. Seule la couleur
+   change, et elle n'est pas libre : le vert est déjà celui de `working` dans
+   la fiche (ETAT_COULEUR) et celui d'un agent au travail dans son panneau. Une
+   conversation qui travaille et un agent qui travaille se disent avec la même
+   encre — c'est la seule lecture cohérente.
+
+   Elle n'apparaît QUE s'il y a des agents en vol (board.js le décide sur la
+   donnée du serveur, jamais sur un zéro affiché) : une puce permanente est une
+   puce qui ne veut plus rien dire, exactement comme la pastille d'alerte que
+   `a_traiter` allumait en continu. */
+.agents{
+  font-family:var(--donnee); font-size:10.5px; font-weight:700; letter-spacing:.02em;
+  border:1px solid currentColor; border-radius:var(--r-puce); padding:1px 6px;
+  white-space:nowrap; flex:none; align-self:center; color:var(--green);
+  background:color-mix(in srgb, currentColor 12%, transparent);
+}
+.agents[hidden]{display:none}
+/* En dense, la puce d'agents part avec celle de PR : à cette taille la carte
+   n'a plus la largeur, et le titre passe avant. */
+.board.mode-XS .agents{display:none}
+
+/* ═════════════════════ LE COÛT DE LA CONVERSATION ════════════════════════
+   Dernier segment de la ligne technique, en chasse fixe parce que c'est un
+   nombre qu'on compare d'une carte à l'autre. Encre secondaire par défaut :
+   c'est un fait, pas une alerte. L'ambre n'arrive qu'au-delà du second seuil
+   (`cout_fort_usd`, 25 $ par défaut), et c'est le serveur qui en décide.
+
+   Le canal STATUT n'est pas volé pour autant : l'ambre vit ici sur un mot de
+   11 px dans la ligne la plus discrète de la carte, jamais sur le bord gauche
+   ni sur la pastille, qui restent les seuls porteurs de l'état. */
+.meta .sou{font-family:var(--donnee); font-weight:500; color:var(--t2)}
+.meta .sou.fort{color:var(--amber)}
 .pr-puce.conflit{color:var(--red)}
 .pr-puce.a_corriger{color:var(--red)}
 .pr-puce.a_relire{color:var(--amber)}

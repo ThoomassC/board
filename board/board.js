@@ -291,6 +291,7 @@ function creerCarte(sid) {
       '<button class="valider" type="button" hidden>' +
         '<i aria-hidden="true">\u2713</i>lu</button>' +
       '<span class="relue" hidden><i aria-hidden="true">\u2713</i>relue</span>' +
+      '<span class="agents" hidden></span>' +
       '<span class="pr-puce" hidden></span>' +
       '<span class="chrono"></span></div>' +
     '<div class="ctx"><span class="ctx-tr"><i></i>' +
@@ -400,6 +401,20 @@ function majCarte(c, e) {
   attr(c, "title", `${e.libelle}${acquittee ? " · relue, acquittée par toi" : ""}`
                    + ` · ${e.project} · ${e.repo || ""}`);
 
+  // ── LES SOUS-AGENTS AU TRAVAIL POUR CETTE CONVERSATION
+  // Ne s'affiche que s'il y en a : zéro agent et « on ne sait pas » (le serveur
+  // envoie null) ne méritent aucun pixel, et une puce permanente ne voudrait
+  // plus rien dire. Elle vaut aussi comme avertissement — une conversation qui
+  // a trois agents en vol n'est pas une conversation qu'on interrompt.
+  const ag = $(".agents", c);
+  const nag = e.agents;
+  ag.hidden = !nag;
+  if (nag) {
+    texte(ag, "\u2699 " + nag + " agent" + (nag > 1 ? "s" : ""));
+    attr(ag, "title", nag + " sous-agent" + (nag > 1 ? "s" : "") +
+        " au travail pour cette conversation — ouvre la fiche pour savoir lesquels");
+  }
+
   // ── la PR de cette branche, s'il en existe une
   const puce = $(".pr-puce", c);
   if (e.pr) {
@@ -422,6 +437,15 @@ function majCarte(c, e) {
     meta.append(h, document.createTextNode(" · " + (e.repo || "")));
   } else {
     meta.textContent = e.meta || "";
+  }
+  // Le coût ferme la ligne technique, et prend l'ambre au-delà du second seuil.
+  // Les deux décisions — l'afficher, et le teinter — viennent du serveur : le
+  // board ne connaît aucun seuil.
+  if (e.cout) {
+    const sou = el("b", "sou" + (e.cout_fort ? " fort" : ""), e.cout);
+    sou.title = "coût cumulé de cette conversation";
+    if (meta.textContent) meta.append(document.createTextNode(" · "));
+    meta.append(sou);
   }
 
   // ── l'état du worktree : la question « lequel a du travail non commité ? »
