@@ -155,6 +155,32 @@ def court(txt, n):
     return txt if len(txt) <= n else txt[:n - 1] + "…"
 
 
+def abrege_modele(v):
+    """« Opus 5 (1M context) » -> « Opus 5 ». Rend "" si rien d'exploitable.
+
+    La parenthèse porte une vraie information, mais pas au prix d'un tiers de la
+    ligne technique : la fiche, elle, affiche le nom entier.
+    """
+    m = " ".join(str(v or "").split())
+    if not m:
+        return ""
+    return m.split("(")[0].strip()
+
+
+def sous(v, seuils):
+    """Coût formaté au-delà du premier seuil, sinon "".
+
+    UN COMPTEUR QUI TOURNE EN PERMANENCE CULPABILISE AU LIEU D'INFORMER, et
+    l'audit l'avait déjà relevé pour le total par colonne (F6). D'où un seuil :
+    en dessous, le chiffre ne dit rien qu'on ait envie de savoir — au-dessus,
+    c'est un fait qu'on veut voir. La virgule décimale est celle du français,
+    comme partout ailleurs à l'écran.
+    """
+    if not isinstance(v, (int, float)) or v < seuils[0]:
+        return ""
+    return ("%.1f $" % v).replace(".", ",")
+
+
 def session_vivante(sid, cwd):
     """La conversation tourne-t-elle encore ? PREUVE DIRECTE, pas une déduction.
 
@@ -178,6 +204,80 @@ def session_vivante(sid, cwd):
     except Exception:
         pass
     return None
+
+
+# --------------------------------------------------- sous-agents au travail
+# Une conversation qui pilote trois agents et une conversation seule avaient
+# exactement la même carte : l'information ne vivait que dans la fiche, à un
+# clic de trop, alors qu'elle répond mieux que toute autre à « celle-là, je
+# peux la laisser tranquille ? ».
+#
+# ELLE COÛTE CHER, ET C'EST POURQUOI ELLE EST MISE EN CACHE. La produire
+# demande de lire le transcript : 20 ms à froid pour 1 098 lignes (2,3 Mo),
+# mesuré le 02/09. La boucle SSE tourne une fois par seconde, et un transcript
+# de conversation active change à chaque écriture, donc le cache interne de
+# `conversation.py` — indexé sur le mtime — y est invalidé en permanence.
+# Quatre conversations actives coûteraient 80 ms par seconde, pour un nombre
+# qui ne change pas vingt fois par seconde. Même remède que `verite_git` : un
+# TTL court, assumé, et le board affiche une valeur vieille de six secondes au
+# pire. Aucun agent ne naît et ne meurt dans cet intervalle sans qu'on le
+# revoie au tour suivant.
+_AGENTS_CACHE = {}
+AGENTS_TTL = 6.0
+# BUDGET PAR TOUR, ET IL EST LÀ POUR UNE RAISON MESURÉE. Le TTL seul ne suffit
+# pas : à son expiration, TOUTES les conversations redeviennent périmées en même
+# temps et le tour suivant les relit toutes d'un coup. Mesuré le 02/09 sur ce
+# poste : 89 ms et 9,7 Mo pour quatre conversations. L'audit rappelle que le
+# board doit tenir à vingt — ce serait un pic de près d'une demi-seconde sur la
+# boucle SSE, une fois toutes les six secondes, c'est-à-dire un board qui
+# hoquette.
+#
+# Le budget rend le coût du tour CONSTANT au lieu de proportionnel au nombre de
+# conversations : on rafraîchit tant qu'il reste du temps, et les autres gardent
+# leur valeur précédente en attendant leur tour. À vingt conversations, toutes
+# sont revues en une dizaine de secondes sans qu'aucun tour ne dépasse ~50 ms.
+AGENTS_BUDGET_MS = 25.0
+_agents_budget = [0.0]
+
+
+def agents_nouveau_tour():
+    """Rouvre le budget de lecture des transcripts. Appelé par instantane()."""
+    _agents_budget[0] = 0.0
+
+
+def agents_au_travail(sid):
+    """Nombre de sous-agents en cours pour cette conversation, ou None.
+
+    None signifie « on ne sait pas » — module absent, transcript introuvable ou
+    illisible — et le board n'affiche alors rien du tout. Zéro signifie « aucun
+    agent », ce qui n'est pas la même chose et ne s'affiche pas davantage.
+    """
+    if conversation is None:
+        return None
+    t = time.time()
+    ent = _AGENTS_CACHE.get(sid)
+    if ent is not None and t - ent[0] < AGENTS_TTL:
+        return ent[1]
+    # Périmé, mais le tour n'a plus de budget : on rend la valeur précédente
+    # plutôt que rien. Une valeur de quelques secondes vaut mieux qu'une puce
+    # qui clignote, et le tour suivant reprendra là où celui-ci s'arrête.
+    if _agents_budget[0] >= AGENTS_BUDGET_MS:
+        return ent[1] if ent is not None else None
+    debut = time.time()
+    n = None
+    try:
+        d = conversation.detail(sid, vivante=session_vivante(sid, None))
+        if not d.get("erreur"):
+            n = d.get("agents_en_cours") or 0
+    except Exception:
+        n = None
+    _agents_budget[0] += (time.time() - debut) * 1000.0
+    # Le cache est borné : une session par entrée, et le board en montre au plus
+    # quelques dizaines. On purge en bloc plutôt que de tenir un ordre d'accès.
+    if len(_AGENTS_CACHE) > 200:
+        _AGENTS_CACHE.clear()
+    _AGENTS_CACHE[sid] = (t, n)
+    return n
 
 
 # ------------------------------------------------------------- vérité git
@@ -555,6 +655,11 @@ class Board:
         oublie = seuils.get("stale_after_s", 900)
         warn = seuils.get("ctx_warn", 50)
         crit = seuils.get("ctx_crit", 70)
+        # Seuils du coût : en dessous du premier, le chiffre reste caché ; à
+        # partir du second, il prend l'ambre. Réglables comme les autres, avec
+        # des valeurs par défaut qui n'obligent personne à toucher sa config.
+        seuil_sou = (seuils.get("cout_visible_usd", 10),
+                     seuils.get("cout_fort_usd", 25))
 
         # Le .tty compte comme preuve d'existence : c'est le SEUL fichier écrit
         # à l'instant du démarrage. Sans lui, une conversation neuve n'apparaît
@@ -659,21 +764,61 @@ class Board:
             else:
                 ctx, niveau = None, "ok"
 
-            # Ligne de métadonnée : dit l'action attendue, pas l'origine technique.
+            # ── LA LIGNE TECHNIQUE DIT CE QU'ON IGNORE ────────────────────────
+            # Elle disait « a rendu la main · ProjetA » sous une pastille
+            # « À RELIRE » et dans une colonne « PROJET_A » : une ligne entière
+            # pour répéter ses deux voisins. Pendant ce temps le modèle et le
+            # coût — 38,44 $ sur une conversation, mesuré le 02/09 — n'étaient
+            # nulle part, alors qu'ils sont dans la charge utile depuis le
+            # premier jour.
+            #
+            # Le premier segment ne survit donc que là où il APPREND quelque
+            # chose : l'outil en cours quand ça travaille, la raison quand ça
+            # casse. Pour `blocked`, `review` et `silent`, la pastille dit déjà
+            # le mot et le chrono dit déjà la durée.
+            # CE QUE LA CONVERSATION ATTEND, dans son propre champ. C'était le
+            # premier segment de `meta`, et il en sort pour ne plus répéter la
+            # pastille sur la carte — mais la FICHE en a besoin, elle : sa
+            # section « en ce moment » n'a pas de pastille sous les yeux quand
+            # aucun outil n'est en vol. Une seule règle, ici, deux lecteurs qui
+            # n'en font pas le même usage.
             if etat == "blocked":
-                meta = "attend une autorisation"
+                attente = "attend une autorisation"
             elif etat == "error":
-                meta = court(ev.get("reason"), 40) or "arrêt en erreur"
+                attente = court(ev.get("reason"), 40) or "arrêt en erreur"
             elif etat == "silent":
-                meta = "muet depuis " + duree(maintenant - maj_ev)
+                attente = "muet depuis " + duree(maintenant - maj_ev)
             elif etat == "review":
-                meta = "main rendue" if ev.get("reason") == "idle_prompt" else "a rendu la main"
+                attente = ("main rendue" if ev.get("reason") == "idle_prompt"
+                           else "a rendu la main")
             elif neuve:
-                meta = "vient de démarrer"
+                attente = "vient de démarrer"
             else:
-                meta = ev.get("tool") or "au travail"
-            if repo:
-                meta += " · " + repo
+                attente = ev.get("tool") or "au travail"
+
+            bouts = []
+            if etat == "error":
+                bouts.append(court(ev.get("reason"), 40) or "arrêt en erreur")
+            elif neuve:
+                bouts.append("vient de démarrer")
+            elif etat == "working":
+                bouts.append(ev.get("tool") or "au travail")
+            # Le dépôt ne se répète que s'il n'est PAS le nom de la colonne.
+            # « ProjetA » sous la colonne PROJET_A n'apprend rien ;
+            # « ProjetB.Automatisation » sous la colonne PROJETB, si.
+            if repo and repo.upper() != (projet or "").upper():
+                bouts.append(repo)
+            modele = abrege_modele(me.get("model"))
+            if modele:
+                bouts.append(modele)
+            meta = " · ".join(bouts)
+            # Le coût voyage à part, pas dans `meta` : il est le seul segment de
+            # cette ligne qui peut prendre un pigment, et une chaîne unique ne
+            # se teinte pas par morceaux. Le serveur décide de son texte ET de
+            # son seuil ; le board ne fait que le poser, comme partout ailleurs.
+            cout = sous(me.get("cost_usd"), seuil_sou)
+            cout_fort = bool(cout and isinstance(me.get("cost_usd"), (int, float))
+                             and me["cost_usd"] >= seuil_sou[1])
 
             cle_vu = "%s:%s:%s" % (sid, etat, int(depuis))
             out.append({
@@ -686,7 +831,11 @@ class Board:
                 "since": "—" if inconnu else duree(dans_etat),
                 "aging": (not inconnu) and etat in ("blocked", "review") and dans_etat > vieillit,
                 "stale": (not inconnu) and etat in ("blocked", "review") and dans_etat > oublie,
-                "meta": meta,
+                "meta": meta, "attente": attente,
+                "cout": cout, "cout_fort": cout_fort,
+                # Nombre de sous-agents au travail, ou None si on ne sait pas.
+                # Voir agents_au_travail() pour le cache et son prix.
+                "agents": agents_au_travail(sid),
                 "say": court(ev.get("last_say"), 110),
                 "ctx_pct": ctx, "ctx_level": niveau,
                 "seen": bool(self.vus.get(cle_vu)),
@@ -715,6 +864,7 @@ class Board:
     def instantane(self):
         self.recharge_config()
         maintenant = int(time.time())
+        agents_nouveau_tour()          # cf. AGENTS_BUDGET_MS
         els = self.sessions(maintenant)
         self.dernieres_sessions = els
         self.dernieres_sessions_at = maintenant
