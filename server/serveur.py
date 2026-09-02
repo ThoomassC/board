@@ -790,8 +790,16 @@ class Board:
         return {
             "now": maintenant, "total": total, "mode": mode,
             "account": compte, "groupes": groupes,
+            # `title` et `repo` REJOIGNENT le bandeau : sans eux, le board ne
+            # pouvait y appliquer la règle « le titre porte, l'identifiant
+            # suit » et affichait l'identifiant seul. Mesuré le 02/09 : les deux
+            # conversations à relire portaient le même — « ProjetA a rendu la
+            # main » deux fois, pour deux travaux différents. Le serveur ne
+            # tranche pas quel libellé gagne : c'est `nomLisible()` côté board,
+            # une seule implémentation pour la carte et pour le bandeau.
             "attention": [{k: e[k] for k in
-                           ("sid", "ident", "state", "glyphe", "since", "project", "libelle")}
+                           ("sid", "ident", "title", "repo", "state", "glyphe",
+                            "since", "project", "libelle")}
                           for e in attente],
             "capteurs_age_s": min([e["age_s"] for e in els if e["age_s"] is not None],
                                   default=None),

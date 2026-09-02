@@ -421,6 +421,32 @@ fabrique son transcript au lieu d'en lire un vrai : la plupart des transcripts
 n'ont aucun sous-agent, donc une auto-vérification qui en lit un au hasard peut
 rester muette pendant des semaines — c'est exactement ce qui est arrivé.
 
+## Le bandeau d'attention — `attention` dans l'instantané
+
+    "attention": [{"sid":…, "title":"107 écarts caractérisés", "ident":"ProjetA",
+                   "repo":"ProjetA", "state":"review", "glyphe":"➜",
+                   "since":"44s", "project":"PROJET_A", "libelle":"À RELIRE"}]
+
+Trié par urgence, et c'est la SEULE zone qui l'est (cf. le refus N3 de
+`docs/AMELIORATIONS.md`).
+
+**`title` et `repo` y sont, et ce n'est pas décoratif.** Le bandeau n'affichait
+que `ident`, qui vaut le nom du dépôt dans le cas courant : mesuré le 02/09, les
+deux conversations à relire donnaient deux jetons identiques — « ➜ ProjetA a
+rendu la main » deux fois, pour deux travaux différents. La zone qui répond à la
+douleur n°1 ne disait pas *laquelle*.
+
+Le serveur ne tranche pas quel libellé gagne : il envoie les trois champs, et
+**`nomLisible()` dans `board.js` applique la règle « le titre porte,
+l'identifiant suit »** — la même fonction pour la carte et pour le bandeau. Cette
+règle avait déjà divergé une fois, la carte passant au titre (D1) pendant que le
+bandeau restait sur l'ancienne hiérarchie. Un troisième consommateur de cette
+règle ne doit pas devenir une troisième version de cette règle.
+
+Le libellé d'état RESTE dans le jeton, atténué. Le glyphe seul ne suffit pas :
+une couleur de statut ne voyage jamais sans son glyphe **et** son libellé, et
+« ✋ » nu demanderait au lecteur de connaître quatre glyphes par cœur.
+
 ## Vocabulaire des états — français à l'écran, anglais dans le code
 
     code       affiché        glyphe   pigment
