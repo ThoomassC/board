@@ -1019,7 +1019,32 @@ body{
    Nouvel ordre : part d'abord le chiffre de contexte (la jauge reste, elle se
    lit sans son nombre), puis la phrase, puis la ligne technique.
    `.titre`, la pastille et le chrono ne partent JAMAIS. */
-.board.mode-L{grid-auto-flow:column; grid-auto-columns:minmax(0,560px); justify-content:start}
+/* ── MODE L : LE PALIER DU CALME, ET IL DOIT S'EN SERVIR ────────────────────
+   `mode-L` se déclenche à quatre conversations ou moins. Il fixait des colonnes
+   de 560 px collées à gauche et ne changeait AUCUNE taille de texte : mesuré le
+   02/09 sur une fenêtre de 1600×950, les cartes couvraient 42 % de la zone
+   offerte, avec 470 px de vide à droite et la moitié basse inoccupée. Le jour
+   où le board a le moins à dire était le jour où il le disait le plus petit.
+
+   C'est le miroir exact du défaut corrigé plus bas en `XS` : là le board
+   sacrifiait le titre alors qu'il restait de la place, ici il gardait la mesure
+   du cas dense alors que la place était là.
+
+   Deux gestes, et rien d'autre :
+     · `center` — le vide devient une marge symétrique au lieu d'un trou à
+       droite. On NE passe PAS les colonnes en `1fr` : à 800 px de large, la
+       phrase de la conversation dépasse 110 caractères par ligne et la carte
+       cesse d'être une carte pour devenir une bande. Le vide n'est pas le
+       problème, le vide asymétrique l'est.
+     · un cran de typographie — le titre passe de 14,5 à 17 px et la phrase de
+       11,5 à 13 px, c'est-à-dire ce qui se LIT à deux mètres. UN cran, pas deux :
+       à 19 px le titre gagnait une ligne sur les intitulés longs et la carte
+       enflait. Le chrono, la pastille et la ligne technique ne bougent pas ;
+       les grossir n'apporterait rien. */
+.board.mode-L{grid-auto-flow:column; grid-auto-columns:minmax(0,560px); justify-content:center}
+.board.mode-L .titre{font-size:17px}
+.board.mode-L .dit{font-size:13px}
+.board.mode-L .carte{padding:13px 15px 12px}
 .board.mode-S .dit,.board.mode-XS .dit{display:none}
 .board.mode-S .titre{font-size:14px}
 .board.mode-S .carte{padding:10px 12px 10px}
