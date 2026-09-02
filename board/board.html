@@ -122,6 +122,7 @@
     <button type="button" id="fi-poubelle">⌫ poubelle</button>
     <button type="button" id="fi-pane" class="primaire">Aller au pane</button>
     <button type="button" id="fi-fermer">Fermer</button>
+    <p class="fi-pane-mot" id="fi-pane-mot" hidden></p>
   </div>
 </dialog>
 
@@ -170,15 +171,17 @@
     <h3>Les gestes</h3>
     <ul class="gestes">
       <li><b>Clic sur une carte</b> — ouvre la <b>fiche</b> de la conversation&nbsp;:
-        ce qu'elle fait à cet instant, les sous-agents qui travaillent pour elle, et
-        ses derniers échanges. Tout en lecture seule — on ne pilote rien depuis ici.
-        Un bouton de la fiche amène au pane, si ce pane est suivi.</li>
+        ce qu'elle fait à cet instant, et les <b>sous-agents</b> qui travaillent pour
+        elle — pour chacun son type, son état et depuis combien de temps. Les derniers
+        échanges ne sont plus repris ici&nbsp;: ils se lisent dans le pane, et la fiche
+        doit tenir en un coup d'œil. Tout en lecture seule — on ne pilote rien depuis
+        ici. Un bouton de la fiche amène au pane, si ce pane est suivi.</li>
       <li><b>Survol d'une seconde</b> — marque « vu »&nbsp;: la conversation quitte le
         bandeau d'alerte et cesse de clignoter, sans changer d'état.</li>
-      <li><b>⌫ sur une carte</b> — met la session à la poubelle. Elle quitte le board et
-        reste dans l'historique, avec un <b>↩</b> pour le faire revenir. Rien n'est
-        jamais supprimé.</li>
-      <li><b>Glisser</b> une colonne ou une session — réordonne, et c'est mémorisé.</li>
+      <li><b>⌫ sur une carte</b> — met la conversation à la poubelle. Elle quitte le
+        board et reste dans l'historique, avec un <b>↩</b> pour la faire revenir. Rien
+        n'est jamais supprimé.</li>
+      <li><b>Glisser</b> une colonne ou une conversation — réordonne, et c'est mémorisé.</li>
       <li><b>Adopter un projet</b> — le serveur repère les conversations qui ne
         se rattachent à aucun projet déclaré, en déduit un nom et une racine, et
         les propose en haut de la colonne <b>AUTRE</b>. Un clic ouvre le

@@ -1968,6 +1968,21 @@ let ficheSid = null, ficheTimer = null;
 const ETAT_COULEUR = { blocked:"var(--red)", error:"var(--red)",
                        silent:"var(--grey)", review:"var(--amber)", working:"var(--green)" };
 
+// LES QUATRE STATUTS D'UN SOUS-AGENT. Table de module, comme ETAT_COULEUR et
+// PR_ETAT : la fiche se réécrit toutes les 3 s, et rien de constant n'a de
+// raison d'être reconstruit à chaque tour.
+//
+// Les libellés et les durées viennent du serveur (`statut`, `depuis_s`,
+// `duree_s`) ; le board n'en déduit aucun. « depuis » et « en » ne sont pas
+// interchangeables : l'un compte un travail qui court, l'autre un travail
+// achevé — c'est pour ça que le serveur envoie deux champs et non un.
+const AGENT = {
+  en_cours: { cl:"vif",    txt:"EN COURS",      quand:s => "depuis " + dur(s) },
+  perdu:    { cl:"perdu",  txt:"SANS NOUVELLE", quand:s => dur(s) },
+  echoue:   { cl:"echoue", txt:"ÉCHEC",         quand:s => "en " + dur(s) },
+  fini:     { cl:"fait",   txt:"fini",          quand:s => "en " + dur(s) },
+};
+
 function dur(s) {
   if (s == null) return "—";
   s = Math.max(0, Math.floor(s));
@@ -2098,32 +2113,67 @@ function rendFiche(d) {
     } else if (e.state === "working") {
       m.append(el("p", "fi-rien", "au travail, aucun outil en vol à cet instant"));
     } else {
-      m.append(el("p", "fi-rien", e.meta || "rien en cours"));
+      // `attente` et non `meta` : la ligne technique de la carte porte
+      // désormais le modèle et le coût, qui ne répondent pas à « que se
+      // passe-t-il en ce moment ». La fiche affichait « Opus 5 » ici.
+      m.append(el("p", "fi-rien", e.attente || "rien en cours"));
     }
   }
 
   // ── sous-agents
+  //
+  // QUATRE STATUTS, PAS DEUX. « en cours / fini » ne suffisait pas : un agent
+  // tué par une limite de quota se présentait comme un agent qui a réussi, et
+  // un agent d'une conversation éteinte comme un agent au travail. Les
+  // libellés viennent du serveur (statut), le board n'en déduit aucun.
+  //
+  // Le TYPE d'agent est affiché à côté de sa description, et c'est le point de
+  // cet écran : « difai-core:difai-dev » et « general-purpose » ne se
+  // surveillent pas de la même façon, alors que leurs descriptions se
+  // ressemblent toutes.
   const a = $("#fi-agents");
   a.textContent = "";
   if ((d.agents || []).length) {
-    a.append(el("h3", null, "sous-agents (" + d.agents_en_cours + " en cours sur "
-                            + d.agents.length + ")"));
+    const total = d.agents_total != null ? d.agents_total : d.agents.length;
+    // Le titre répond d'abord à « est-ce que ça travaille pour moi, là ? ».
+    a.append(el("h3", null, d.agents_en_cours
+      ? "sous-agents — " + d.agents_en_cours + " au travail sur " + total
+      : "sous-agents — " + total + ", aucun au travail"));
     for (const g of d.agents) {
-      const r = el("div", "fi-agent " + (g.en_cours ? "vif" : "fait"));
-      r.append(el("b", null, g.en_cours ? "EN COURS" : "fini"),
-               el("span", null, g.desc),
-               el("em", null, dur(g.depuis_s)));
+      const m = AGENT[g.statut] || AGENT.fini;
+      const r = el("div", "fi-agent " + m.cl);
+      r.append(el("b", null, m.txt), el("span", null, g.desc));
+      // Le type n'est pas toujours transmis : l'appel peut l'omettre, et le
+      // serveur ne le devine pas. Pas de ligne fantôme dans ce cas.
+      if (g.type) r.append(el("i", "fi-type", g.type));
+      r.append(el("em", null, m.quand(g.depuis_s != null ? g.depuis_s : g.duree_s)));
       a.append(r);
+    }
+    if (total > d.agents.length) {
+      a.append(el("p", "fi-rien", "et " + (total - d.agents.length)
+                                  + " de plus, déjà terminés"));
     }
   }
 
   // ── pieds
+  //
+  // Un bouton éteint doit dire POURQUOI, et pas seulement en infobulle : une
+  // infobulle ne se lit qu'à celui qui soupçonne déjà qu'il y a quelque chose à
+  // lire. C'est l'aveu que D6 demandait, rendu à l'endroit qu'il concerne.
   const bp = $("#fi-pane");
-  bp.disabled = e.pane == null;
-  bp.title = e.pane == null
+  const sansPane = e.pane == null;
+  bp.disabled = sansPane;
+  bp.title = sansPane
     ? "aucun pane suivi pour cette conversation"
     : "focaliser le pane " + e.pane;
-  texte($("#fi-note"), e.pane == null ? "pane non suivi" : "pane " + e.pane);
+  texte($("#fi-note"), sansPane ? "pane non suivi" : "pane " + e.pane);
+  const mot = $("#fi-pane-mot");
+  mot.hidden = !sansPane;
+  if (sansPane) {
+    texte(mot, "Bouton éteint : aucun pane n'est suivi pour cette conversation, "
+             + "le board ne sait donc pas où elle vit dans le terminal. "
+             + "Tout le reste de cette fiche reste juste.");
+  }
 }
 
 $("#fi-fermer").onclick = () => { dlgFiche.close(); clearTimeout(ficheTimer); };

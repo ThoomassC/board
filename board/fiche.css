@@ -249,11 +249,40 @@ dialog#fiche::backdrop{background:var(--voile)}
   background:color-mix(in srgb, currentColor 14%, var(--panel));
   border:1px solid color-mix(in srgb, currentColor 38%, transparent);
 }
-.fi-agent.vif b{color:var(--amber)}
+/* QUATRE STATUTS, ET L'AMBRE N'EST PLUS CELUI DE L'AGENT AU TRAVAIL. Dans
+   cette meme fiche, l'ambre est la couleur de BLOQUE, porte par la pastille
+   d'en-tete : deux ambres a dix centimetres l'un de l'autre pour "il faut toi"
+   et "ca avance tout seul" faisaient lire l'un pour l'autre. Un agent qui
+   travaille prend donc le VERT, qui est deja la couleur de `working` dans
+   cette meme fiche (voir ETAT_COULEUR dans board.js) : la conversation au
+   travail et l'agent au travail se disent alors avec la meme encre, ce qui est
+   la seule lecture cohérente.
+     vert  au travail      -> ca avance, rien a faire
+     rouge echec           -> l'agent est mort en route, il y a a reprendre
+     gris  sans nouvelle   -> lance, jamais revenu, conversation eteinte
+     t3    fini            -> le cas normal, le plus discret des quatre */
+.fi-agent.vif b{color:var(--green)}
+.fi-agent.echoue b{color:var(--red)}
+.fi-agent.perdu b{color:var(--grey)}
 .fi-agent.fait b{color:var(--t3)}
+/* Une ligne d'agent fini ne doit pas peser autant qu'une ligne vivante : c'est
+   le tri qui met les vivantes en haut, et l'encre qui les garde en avant. */
+.fi-agent.fait span{color:var(--t3)}
 .fi-agent span{
+  flex:1 1 auto; min-width:0;
   color:var(--t2); font-size:12px; overflow:hidden;
   text-overflow:ellipsis; white-space:nowrap;
+}
+/* Le TYPE d'agent : sa vraie identite, mais pas ce qu'on lit en premier. En
+   chasse fixe parce que c'est un identifiant qu'on recopie ("difai-core:…"),
+   borne en largeur parce que ces noms sont longs et que la description ne doit
+   pas se faire ecraser par eux. */
+.fi-agent .fi-type{
+  flex:none; max-width:38%;
+  font-style:normal; font-family:var(--donnee); font-size:10.5px;
+  color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  padding:1px 6px; border-radius:var(--r-jeton);
+  background:color-mix(in srgb,var(--line) 45%,transparent);
 }
 /* Seule colonne veritable de la fiche : plusieurs sous-agents empilent leur
    duree les uns sous les autres. C'est l'exception documentee du contrat
@@ -261,6 +290,11 @@ dialog#fiche::backdrop{background:var(--voile)}
 .fi-agent em{
   margin-left:auto; font-style:normal; font-family:var(--donnee);
   font-variant-numeric:tabular-nums; color:var(--t3); white-space:nowrap;
+  /* Largeur RÉSERVÉE, comme le chrono d'en-tête et pour la même raison : la
+     fiche se réécrit toutes les 3 s, et « 59s » qui devient « 1m00 » pousserait
+     la puce de type d'un cran à chaque tour. Les chiffres tabulaires figent la
+     largeur d'un chiffre, pas celle du mot. */
+  min-width:10ch; text-align:right;
 }
 
 /* ═════════════════════ pieds ═══════════════════════════════════════════
@@ -272,6 +306,17 @@ dialog#fiche::backdrop{background:var(--voile)}
   padding:13px 20px; border-top:1px solid var(--line); background:var(--chrome);
 }
 .fi-note{font-size:11px; color:var(--t3); margin-right:auto}
+/* L'AVEU DU PANE NON SUIVI. Il vivait dans le pied de page du board, entre deux
+   raccourcis clavier, dans la ligne la moins lue de l'ecran. Ici il est sous le
+   bouton qu'il explique, et il passe a la ligne entiere (`flex-basis:100%` dans
+   les pieds, qui sont en flex-wrap) : un texte de trois lignes coince entre
+   trois boutons serait illisible. Encre tertiaire et 11,5 px — c'est une
+   explication, pas une alerte : rien n'est casse, une promesse est simplement
+   tenue ailleurs. */
+.fi-pane-mot{
+  flex:1 1 100%; margin:0; padding-top:4px;
+  font-size:11.5px; line-height:1.5; color:var(--t3); max-width:62ch;
+}
 #fiche button{
   font-family:var(--texte); font-weight:600; font-size:11.5px; cursor:pointer;
   border-radius:var(--r-ctrl); padding:7px 14px; border:1px solid var(--line);
