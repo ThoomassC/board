@@ -476,12 +476,69 @@ rester muette pendant des semaines — c'est exactement ce qui est arrivé.
 
 ## Le bandeau d'attention — `attention` dans l'instantané
 
-    "attention": [{"sid":…, "title":"107 écarts caractérisés", "ident":"ProjetA",
-                   "repo":"ProjetA", "state":"review", "glyphe":"➜",
-                   "since":"44s", "project":"PROJET_A", "libelle":"À RELIRE"}]
-
 Trié par urgence, et c'est la SEULE zone qui l'est (cf. le refus N3 de
-`docs/AMELIORATIONS.md`).
+`docs/AMELIORATIONS.md`). **Deux genres d'entrées**, et `genre` dit lequel :
+
+    {"genre":"conv", "sid":…, "title":"107 écarts caractérisés",
+     "ident":"ProjetA", "repo":"ProjetA", "state":"review", "glyphe":"➜",
+     "since":"44s", "project":"PROJET_A", "libelle":"À RELIRE"}
+
+    {"genre":"item", "texte":"1 PR en conflit — 5 j", "detail":"#31004 (US 40003)",
+     "glyphe":"⚠", "niveau":"bloque", "action":"résoudre le conflit",
+     "onglet":"pr", "url":"https://…", "project":"PROJET_A", "poids":2, "n":1}
+
+### Pourquoi deux genres — l'onglet Projets a été fusionné ici
+
+Le bandeau était une file de CONVERSATIONS : une PR en conflit ou un arbre non
+commité n'y entrait pas, donc n'attendait nulle part. L'onglet « Projets »
+portait cet axe et il a disparu le 02/09 — mesuré, il affichait **une ligne pour
+deux projets** (« 3 conversations à relire »), entièrement dérivée des
+conversations, donc déjà dite deux fois ailleurs : les jetons du bandeau et la
+pastille de chaque carte. Sa propre pastille comptait les mêmes trois
+conversations que le bandeau.
+
+`server/attente.py` (ex-`projets.py`) fournit désormais au bandeau **ce qui ne
+vient pas des conversations, et rien d'autre** — les reprendre les compterait
+deux fois.
+
+**Seul le seau « à toi » monte.** « Qui tient la balle ? » avait trois réponses ;
+`chez_les_autres` et `a_ranger` ne remontent pas — c'est ce qui empêche le
+bandeau de se noyer, et ces deux lectures vivent toujours dans les onglets Pull
+Requests et Chantier.
+
+### Une seule échelle de priorité, dans `attente.POIDS_CONV` et `P_*`
+
+`serveur.PRIORITE` n'existe plus : elle ne classait que les conversations et
+n'avait aucun rang à donner à une PR en conflit. Les dix poids vivent dans
+`attente.py`, sans ex aequo possible, ordonnés par **coût de l'inaction** :
+
+    0 bloquée · 1 erreur · 2 PR en conflit · 3 PR prête · 4 non commité
+    5 PR à corriger · 6 conversation muette · 7 mon vote · 8 à relire
+    9 non poussé
+
+Le tri se fait sur les deux sources RÉUNIES. Deux listes triées séparément puis
+concaténées donneraient un ordre qui n'a de sens dans aucune des deux : une PR
+en conflit doit passer devant une conversation muette, pas derrière toutes les
+conversations.
+
+### Les relevés sont LUS dans leur cache, jamais déclenchés
+
+`attention` se reconstruit à chaque instantané, une fois par seconde. Le chemin
+utilise donc `chantier.dernier()` et `pullrequests.dernier(cfg)`, deux lectures
+strictement passives — `scan()` y est interdit : le premier lance un balayage
+git de tous les arbres dès que son cache expire, le second peut réveiller un
+thread `az`. Cache absent ou froid → aucun item, et le bandeau ne prétend rien
+(`attente_degrade` porte le motif quand un relevé se sait incomplet).
+
+Conséquence assumée : au démarrage du serveur, le bandeau ne montre que les
+conversations jusqu'à ce qu'un affichage du board ait réchauffé le cache du
+chantier. Mieux vaut ça qu'un balayage git sur la boucle SSE.
+
+### `onglet` est une donnée, pas une déduction
+
+Un jeton d'item mène quelque part : sa PR dans le navigateur (`url` gagne quand
+elle existe), sinon l'onglet qui la détaille (`onglet` vaut `pr` ou `chantier`).
+Le board ne lit pas le préfixe de `cle` pour le deviner.
 
 **`title` et `repo` y sont, et ce n'est pas décoratif.** Le bandeau n'affichait
 que `ident`, qui vaut le nom du dépôt dans le cas courant : mesuré le 02/09, les

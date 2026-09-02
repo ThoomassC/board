@@ -44,9 +44,9 @@ try:
 except Exception:
     chantier = None
 try:
-    import projets
+    import attente as file_attente
 except Exception:
-    projets = None
+    file_attente = None
 try:
     from rouvrir import rouvrir as rouvrir_conv
 except Exception:
@@ -91,7 +91,10 @@ RE_NOM_PROJET = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$")
 PALETTE_PROJETS = ["#4EC9A0", "#D8A657", "#9B6DD6", "#4A9EFF", "#E06C75",
                    "#3FB8AF", "#C678DD", "#7EA6E0", "#B5895A", "#8FBF7F"]
 
-PRIORITE = {"blocked": 0, "error": 1, "silent": 2, "review": 3, "working": 4}
+# La priorité d'attention vit désormais dans `attente.POIDS_CONV`, avec celle
+# des arbres et des PR : le bandeau mêle les trois sources et ne peut pas les
+# trier sur deux échelles. Cette table-ci ne classait que les conversations, et
+# elle n'avait pas de rang à donner à une PR en conflit.
 GLYPHE = {"blocked": "✋", "error": "✖", "silent": "⋯", "review": "➜", "working": "●"}
 LIBELLE = {"blocked": "BLOQUÉ", "error": "ERREUR", "silent": "SILENCE",
            "review": "À RELIRE", "working": "AU TRAVAIL"}
@@ -914,10 +917,52 @@ class Board:
             groupes.append({"project": nom, "accent": accents.get(nom),
                             "count": len(lot), "sessions": lot})
 
-        # Bandeau d'attention : la SEULE zone triée par urgence.
-        attente = [e for e in els if e["state"] in ("blocked", "error", "silent", "review")
-                   and not e["seen"]]
-        attente.sort(key=lambda e: (PRIORITE.get(e["state"], 9), -(e["since_s"] or 0)))
+        # ── LE BANDEAU D'ATTENTION : LA SEULE ZONE TRIÉE PAR URGENCE ─────────
+        #
+        # Il était une file de CONVERSATIONS, et c'était sa limite : une PR en
+        # conflit ou un arbre non commité n'y entrait pas, donc n'attendait
+        # nulle part. L'onglet « Projets » portait cet axe et il a été fusionné
+        # ici le 02/09 — il affichait une ligne pour deux projets, déjà dite
+        # deux fois ailleurs. Voir server/attente.py pour l'histoire complète.
+        #
+        # DEUX SOURCES, UNE SEULE ÉCHELLE. Les poids viennent tous de
+        # `attente.py` — y compris pour les conversations, via POIDS_CONV.
+        # Trier deux listes avec deux échelles et les concaténer aurait donné un
+        # ordre qui n'a de sens dans aucune des deux.
+        conv = [e for e in els if e["state"] in ("blocked", "error", "silent", "review")
+                and not e["seen"]]
+        poids_conv = (file_attente.POIDS_CONV if file_attente is not None
+                      else {"blocked": 0, "error": 1, "silent": 2, "review": 3})
+
+        # Ce que les conversations ne savent pas dire. Les deux relevés sont lus
+        # DANS LEUR CACHE, jamais déclenchés : cette fonction tourne une fois
+        # par seconde, et ni un balayage git ni un réveil de `az` n'ont leur
+        # place sur ce chemin. Cache absent ou froid -> on ne prétend rien.
+        hors_conv = []
+        degrade_attente = None
+        if file_attente is not None:
+            try:
+                ch = chantier.dernier() if chantier is not None else None
+                pr = pullrequests.dernier(self.cfg) if pullrequests is not None else None
+                if ch or pr:
+                    hors_conv = file_attente.attente(self.cfg, ch, pr)
+                    degrade_attente = file_attente.degrade(ch, pr)
+            except Exception:
+                hors_conv = []
+
+        # UN SEUL TRI, sur les deux sources réunies. Deux listes triées chacune
+        # de son côté puis concaténées auraient donné un ordre qui n'a de sens
+        # dans aucune des deux : une PR en conflit (2) doit passer devant une
+        # conversation muette (6), pas derrière toutes les conversations.
+        # À poids égal — jamais entre deux sources, mais possible entre deux
+        # conversations de même état — la plus ancienne passe devant.
+        bandeau = [(poids_conv.get(e["state"], 99), -(e["since_s"] or 0),
+                    dict({k: e[k] for k in
+                          ("sid", "ident", "title", "repo", "state", "glyphe",
+                           "since", "project", "libelle")}, genre="conv"))
+                   for e in conv]
+        bandeau += [(i["poids"], 0, dict(i, genre="item")) for i in hors_conv]
+        bandeau.sort(key=lambda t: (t[0], t[1]))
 
         total = len(els)
         mode = "L" if total <= 4 else "M" if total <= 8 else "S" if total <= 16 else "XS"
@@ -947,10 +992,13 @@ class Board:
             # main » deux fois, pour deux travaux différents. Le serveur ne
             # tranche pas quel libellé gagne : c'est `nomLisible()` côté board,
             # une seule implémentation pour la carte et pour le bandeau.
-            "attention": [{k: e[k] for k in
-                           ("sid", "ident", "title", "repo", "state", "glyphe",
-                            "since", "project", "libelle")}
-                          for e in attente],
+            #
+            # `genre` dit au board comment lire l'entrée et ce qu'un clic doit
+            # faire. Deux valeurs, et aucune n'est devinable depuis les autres
+            # champs : une conversation ouvre sa fiche, un item ouvre son URL ou
+            # l'onglet qui le détaille.
+            "attention": [e for _, _, e in bandeau],
+            "attente_degrade": degrade_attente,
             "capteurs_age_s": min([e["age_s"] for e in els if e["age_s"] is not None],
                                   default=None),
             # Le board doit pouvoir avouer que les alertes sont muettes : une
@@ -1239,22 +1287,6 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._envoyer(200, {"groupes": [], "total": 0, "a_traiter": 0,
                                            "degrade": "erreur du module PR : %s" % e})
-        if route == "/api/projets":
-            if projets is None:
-                return self._envoyer(200, {"projets": [], "a_traiter": 0,
-                                           "degrade": "module Projets absent"})
-            try:
-                force = "force=1" in (self.path.split("?", 1)[1] if "?" in self.path else "")
-                snap = BOARD.instantane()
-                ch = chantier.scan(BOARD.cfg, sessions=BOARD.sessions_connues(),
-                                   us_de=us_de, force=force) if chantier else {}
-                pr = pullrequests.scan(BOARD.cfg, force=force) if pullrequests else {}
-                # Les deux scans sortent de leur propre cache : cette route ne
-                # coûte donc rien de plus que les onglets qu'elle résume.
-                return self._envoyer(200, projets.synthese(BOARD.cfg, snap, ch, pr))
-            except Exception as e:
-                return self._envoyer(200, {"projets": [], "a_traiter": 0,
-                                           "degrade": "erreur du module Projets : %s" % e})
         # les polices vivent dans board/fonts/ : un seul sous-dossier autorisé,
         # et _statique() vérifie de toute façon qu'on ne sort pas de board/
         if route.startswith("/fonts/") and route.count("/") == 2:
@@ -1338,6 +1370,7 @@ def main():
     manque = [n for n, m in (("historique", historique), ("panes", resolve_pane),
                              ("notifier", Notifier),
                              ("pullrequests", pullrequests),
+                             ("attente", file_attente),
                              ("chantier", chantier),
                              ("peindre", peindre),
                              ("conversation", conversation),

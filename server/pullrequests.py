@@ -839,6 +839,33 @@ def _lancer(config: dict, chemin: str, precedent) -> bool:
 
 # ------------------------------------------------------------------- public
 
+def dernier(config: dict):
+    """Le cache tel qu'il est sur le disque, ou None. NE LANCE RIEN.
+
+    `scan()` ne parle pas non plus au réseau, mais il peut réveiller un thread
+    `az` quand le cache est périmé. Le bandeau d'attention se reconstruit à
+    chaque instantané : il lui faut une lecture strictement passive, sans quoi
+    un Azure DevOps injoignable ferait tourner un `az` derrière chaque battement
+    du board — le piège que `BACKOFF_S` existe déjà pour éviter ailleurs.
+
+    Le cache disque porte déjà les PR JUGÉES (`etat` par PR) : il n'y a rien à
+    recalculer, seulement à lire.
+    """
+    try:
+        cache = _lire_cache(_chemin_cache(config if isinstance(config, dict) else {}))
+    except Exception:
+        return None
+    if not isinstance(cache, dict):
+        return None
+    groupes = cache.get("groupes")
+    scanne_a = _entier(cache.get("scanned_at"), 0)
+    return {
+        "groupes": groupes if isinstance(groupes, list) else [],
+        "age_s": max(0, int(time.time()) - scanne_a) if scanne_a else 0,
+        "degrade": cache.get("degrade") if isinstance(cache.get("degrade"), str) else None,
+    }
+
+
 def scan(config: dict, force: bool = False) -> dict:
     """État des Pull Requests. Rend en quelques millisecondes, ne lève jamais.
 
