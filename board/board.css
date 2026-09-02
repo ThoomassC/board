@@ -563,7 +563,21 @@ body{
 .att:hover{background:var(--card-haut); border-color:var(--edge-off)}
 .att:focus-visible{outline:2px solid var(--sky); outline-offset:1px}
 .att b{font-family:var(--ui); font-weight:600}
-.att .d{color:var(--t3)}
+/* LE NOM DE LA CONVERSATION PORTE CE JETON. Il affichait l'identifiant, qui
+   vaut le nom du dépôt dans le cas courant : deux conversations d'un même
+   dépôt donnaient deux jetons identiques — « ➜ ProjetA a rendu la main » deux
+   fois, mesuré le 02/09 sur les deux conversations à relire. Le nom vient de
+   `nomLisible()`, la même règle que la carte.
+   `min-width:0` + ellipsis : un titre long rétrécit son propre jeton au lieu
+   de pousser le chrono et le libellé hors du bandeau. */
+.att .nom{
+  font-weight:600; color:var(--t1); min-width:0;
+  overflow:hidden; text-overflow:ellipsis;
+}
+.att .quoi{color:var(--t2); flex:none}
+.att .d{color:var(--t3); flex:none}
+/* Le jeton peut rétrécir, mais jamais en dessous de quoi rester lisible. */
+.att{min-width:0; max-width:min(420px,100%)}
 /* Un vrai bouton, avec les états interactifs de .att : il était un <span> sans
    clic, sans survol et non focusable au clavier — un texte qui ressemble à une
    troncature et promet une action qu'il ne tient pas. */

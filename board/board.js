@@ -232,17 +232,22 @@ function rendAttention(snap) {
     const b = document.createElement("button");
     b.className = "att";
     b.type = "button";
-    b.title = `${e.project} · ${e.libelle}`;
-    const g = document.createElement("b");
+    // L'identifiant quitte le jeton et rejoint l'infobulle : c'est lui qui
+    // rendait deux conversations d'un même dépôt indiscernables ici.
+    b.title = `${e.project} · ${e.libelle}` + (e.ident ? ` · ${e.ident}` : "");
+    // Le glyphe garde le pigment d'état ; le NOM prend l'encre primaire. Le
+    // libellé reste, atténué : le contrat interdit qu'une couleur de statut
+    // voyage sans son glyphe ET son libellé, et « ✋ » seul demanderait au
+    // lecteur de connaître quatre glyphes par cœur.
+    const g = el("b", null, e.glyphe);
     g.style.color = EDGE[e.state] || "var(--t1)";
-    g.textContent = `${e.glyphe} ${e.ident}`;
-    const l = document.createElement("span");
-    l.textContent = e.state === "blocked" ? "attend ton OK"
-                  : e.state === "error" ? "erreur"
-                  : e.state === "silent" ? "muette" : "a rendu la main";
-    const d = document.createElement("span");
-    d.className = "d"; d.textContent = e.since;
-    b.append(g, l, d);
+    const n = el("span", "nom", nomLisible(e).nom);
+    const l = el("span", "quoi",
+                 e.state === "blocked" ? "attend ton OK"
+               : e.state === "error" ? "erreur"
+               : e.state === "silent" ? "muette" : "a rendu la main");
+    const d = el("span", "d", e.since);
+    b.append(g, n, l, d);
     b.onclick = () => ouvrir(e.sid);
     zone.append(b);
   }
@@ -329,6 +334,32 @@ function creerCarte(sid) {
   return c;
 }
 
+/* ─────────────────── LE TITRE PORTE, L'IDENTIFIANT SUIT ─────────────────────
+   Une seule implémentation, parce que deux consommateurs la partagent : la
+   carte et le bandeau d'attention. docs/SCHEMA.md l'exige nommément pour
+   l'extraction du n° d'US, et pour la même raison — cette règle-ci a déjà
+   divergé une fois, le bandeau étant resté sur l'ancienne hiérarchie pendant
+   que la carte passait au titre (D1). Le bandeau y affichait alors deux fois
+   « ProjetA » pour deux conversations différentes.
+
+   Rend { nom, appoint } : `nom` est ce qui doit se lire en premier, `appoint`
+   ce qui le complète, ou "" quand il n'apprendrait rien.
+     · pas de titre exploitable  -> l'identifiant devient le nom, et ne se
+       répète pas en appoint ;
+     · titre égal à l'identifiant -> on n'écrit pas deux fois la même chaîne ;
+     · identifiant égal au dépôt  -> `meta` finit déjà par le dépôt, donc
+       l'appoint le dirait une troisième fois. */
+function nomLisible(e) {
+  const titre = (e.title || "").trim();
+  const ident = (e.ident || "").trim();
+  const repo  = (e.repo  || "").trim();
+  const titreUtile = titre && titre !== "(sans titre)" && titre !== ident;
+  return {
+    nom: titreUtile ? titre : ident,
+    appoint: (titreUtile && ident && ident !== repo) ? ident : "",
+  };
+}
+
 function majCarte(c, e) {
   c.className = "carte " + e.state
     + (TEINTE.has(e.state) ? " teinte" : "")
@@ -340,25 +371,11 @@ function majCarte(c, e) {
   c.style.setProperty("--edge", EDGE[e.state] || "var(--edge-off)");
   texte($(".gl", c), e.glyphe);
 
-  // LE TITRE PORTE, L'IDENTIFIANT SUIT — mais le titre est genere par Claude et
-  // le serveur le fait retomber sur le depot quand la session n'en a pas encore.
-  // Deux gardes, donc :
-  //   · pas de titre exploitable -> l'identifiant remonte en premiere ligne et
-  //     ne se repete pas en dessous ;
-  //   · titre identique a l'identifiant (cas d'une session lancee depuis la
-  //     racine d'un projet) -> on n'ecrit pas deux fois la meme chaine.
-  const titre = (e.title || "").trim();
-  const ident = (e.ident || "").trim();
-  const repo  = (e.repo  || "").trim();
-  const titreUtile = titre && titre !== "(sans titre)" && titre !== ident;
-  // Troisieme garde, ajoutee apres avoir regarde l'ecran : `meta` FINIT par le
-  // depot. Quand l'identifiant EST le depot — le cas de toute session lancee
-  // depuis la racine d'un projet — la ligne technique disait deux fois la meme
-  // chose (« ProjetB · main rendue · ProjetB »). On ne l'ecrit qu'une fois.
-  const identUtile = titreUtile && ident && ident !== repo;
-  texte($(".titre", c), titreUtile ? titre : ident);
-  texte($(".id", c),    identUtile ? ident : "");
-  $(".id", c).hidden = !identUtile;
+  // La regle vit dans nomLisible(), partagee avec le bandeau d'attention.
+  const nl = nomLisible(e);
+  texte($(".titre", c), nl.nom);
+  texte($(".id", c),    nl.appoint);
+  $(".id", c).hidden = !nl.appoint;
 
   texte($(".chrono", c), e.since);
   // La pastille ecrit l'etat en clair : c'est le canal STATUT depuis Ardoise.
