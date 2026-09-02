@@ -595,7 +595,13 @@ function rendBoard(snap) {
     if (col.style.order !== String(i)) col.style.order = String(i);
     col.style.setProperty("--acc", g.accent || "var(--t3)");
     texte($(".nm", col), g.project);
-    texte($(".ct", col), `${g.count} session${g.count > 1 ? "s" : ""}`);
+    // « SESSION » DANS LE CODE, « CONVERSATION » À L'ÉCRAN. Le mot « session »
+    // est le nom de l'objet du contrat (docs/SCHEMA.md) et il y reste ; à
+    // l'écran il désigne autre chose pour qui lit — une session de travail, pas
+    // un fil de discussion. L'onglet, l'aide et la fiche disaient déjà
+    // « conversation » ; cet en-tête était le seul endroit où le vocabulaire du
+    // code affleurait.
+    texte($(".ct", col), `${g.count} conversation${g.count > 1 ? "s" : ""}`);
     // Seule la colonne de repli peut porter une proposition d'adoption : c'est
     // la seule où « ce projet n'est pas déclaré » est vrai.
     if (g.project === snap.fallback) majAdoption(col, snap);
