@@ -568,9 +568,6 @@ function rendBoard(snap) {
     board.style.setProperty("--cols", `repeat(${groupes.length}, minmax(0,1fr))`);
   else board.style.setProperty("--cols", "none");
 
-  // La légende ne promet le focus que s'il est réellement disponible.
-  const avecPane = groupes.reduce((n, g) =>
-    n + (g.sessions || []).filter(e => e.pane != null).length, 0);
   const muet = $("#legende-muet");
   if (muet) {
     const off = dernier && dernier.notify_actif === false;
@@ -581,11 +578,14 @@ function rendBoard(snap) {
            "Passe notify.enabled à true dans ~/.claude/board/config.json.");
     }
   }
+  // LE PIED DE PAGE EST UN MODE D'EMPLOI, PAS UN AVEU. Il portait « aucun pane
+  // suivi — la fiche reste lisible », coincé entre deux raccourcis, dans la
+  // ligne la moins lue de l'écran. D6 avait demandé cet aveu et il était juste ;
+  // il était seulement au mauvais endroit. Il vit désormais dans la fiche, sous
+  // le bouton qu'il concerne — le même geste que l'adoption de projet, qui a
+  // quitté la barre du haut pour la colonne où le manque se voit.
   const fin = $("#legende-fin");
-  if (fin) texte(fin, "clic = fiche · "
-    + (avecPane ? "la fiche mène au pane" : "aucun pane suivi — la fiche reste lisible")
-    + " · ⌫ = poubelle · glisser pour réordonner");
-  if (fin) classe(fin, "muet", !avecPane);
+  if (fin) texte(fin, "clic = fiche · ⌫ = poubelle · glisser pour réordonner");
 
   const vues = new Set();
   groupes.forEach((g, i) => {
