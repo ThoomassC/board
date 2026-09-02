@@ -93,13 +93,28 @@
        --neon-proj  halo extérieur d'un panneau ou d'une ligne, teinte projet
        --neon-etat  halo extérieur en pigment d'ÉTAT
 
-     Les spreads sont NÉGATIFS (-5, -6 px) : le halo est plus petit que la boîte
+     Les spreads sont NÉGATIFS (-7, -8 px) : le halo est plus petit que la boîte
      qui le porte, donc il ne bave pas sur les voisins. C'est ce qui permet d'en
-     mettre sur cinq colonnes sans que l'écran devienne une soupe de lumière. */
-  --neon-pt:0 0 9px 1px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 60%,transparent);
-  --neon-txt:0 0 13px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 50%,transparent);
-  --neon-proj:0 0 20px -6px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 45%,transparent);
-  --neon-etat:0 0 22px -5px color-mix(in srgb,var(--edge,var(--edge-off)) 55%,transparent);
+     mettre sur cinq colonnes sans que l'écran devienne une soupe de lumière.
+
+     BAISSÉS D'UN CRAN le 02/09 : flou réduit d'environ un tiers, opacité de
+     même, spreads creusés de 2 px. Les quatre halos d'origine se cumulaient —
+     une carte porte son néon d'état DANS un panneau qui porte le sien, sous un
+     titre qui porte sa lueur de texte — et trois sources faibles superposées
+     font une source forte. À cinq colonnes l'écran gagnait un voile violet
+     général, où plus aucun halo ne désignait quoi que ce soit : un halo qui est
+     partout ne signale rien. Ils redeviennent une nuance qu'on remarque quand
+     on la cherche, ce qui est leur rôle.
+
+     La HIÉRARCHIE est conservée, et elle est intentionnelle :
+     état (36%) > point d'accent (38% mais 6 px de flou seulement) > projet
+     (26%) > texte (30%, sans spread). Le pigment d'ÉTAT reste le plus fort des
+     quatre : c'est le seul qui demande un acte. Réduire tout à la même valeur
+     aurait éteint le signal en même temps que le décor. */
+  --neon-pt:0 0 6px 0 color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 38%,transparent);
+  --neon-txt:0 0 9px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 30%,transparent);
+  --neon-proj:0 0 14px -8px color-mix(in srgb,var(--acc,var(--accent,var(--sky))) 26%,transparent);
+  --neon-etat:0 0 16px -7px color-mix(in srgb,var(--edge,var(--edge-off)) 36%,transparent);
 }
 :root[data-theme="clair"]{
   --chrome:#EFEDF6; --bg:#F5F4FA; --panel:#FBFAFD; --card:#FFFFFF; --line:#EAE7F2;
