@@ -31,6 +31,7 @@ Champs de payload consommes, verifies sur le bundle 2.1.245 :
 import sys
 import os
 import json
+import re
 import time
 
 VALID_STATES = ("working", "blocked", "review", "error", "dead")
@@ -139,6 +140,72 @@ def read_json_file(path):
     except (OSError, ValueError):
         return None
     return d if isinstance(d, dict) else None
+
+
+# --- dé-Markdown de la phrase ----------------------------------------------
+# Claude écrit du Markdown, la carte affiche du texte nu. Tant que `last_say`
+# était vide (le bug de l'appariement Stop/Notification, corrige plus haut), le
+# probleme ne se voyait pas ; des que le champ s'est rempli, la seule ligne de
+# prose de la carte a affiche sa syntaxe. Mesure le 02/09 sur deux
+# conversations vivantes :
+#     « ... mon commit `1a2b3c4` **s'applique sans conflit** sur ... »
+#     « Reponse a `projeta-71` ... ## Ce que j'ai decide Je n'ai **pas** ... »
+# Le titre de section est le pire des trois : il perd son retour a la ligne en
+# chemin, donc il ne titre plus rien et colle deux phrases.
+#
+# LE NETTOYAGE PRECEDE LA TRONCATURE, et l'ordre n'est pas indifferent :
+# couper a 200 caracteres d'abord laisserait une paire d'etoiles ouverte, donc
+# une etoile orpheline a l'ecran — le defaut qu'on essaie de retirer.
+#
+# Ce n'est pas un rendu Markdown : c'est un DEBALISAGE. On ne cherche pas a
+# restituer une mise en forme dans une ligne de 200 caracteres sans retour a la
+# ligne, seulement a ce qu'aucun caractere de balisage n'y survive.
+_MD = (
+    (re.compile(r"`([^`]+)`"), r"\1"),           # code en ligne
+    (re.compile(r"!\[([^\]]*)\]\([^)]*\)"), r"\1"),   # image -> son texte
+    (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),    # lien  -> son texte
+    (re.compile(r"\*\*\*([^*]+)\*\*\*"), r"\1"),      # ***fort***
+    (re.compile(r"\*\*([^*]+)\*\*"), r"\1"),          # **gras**
+    (re.compile(r"(?<![\w*])\*(?!\s)([^*\n]*[^*\s\n])\*(?![\w*])"), r"\1"),  # *italique*
+    (re.compile(r"__([^_]+)__"), r"\1"),                 # __gras__
+    (re.compile(r"(?<![\w_])_(?!\s)([^_\n]*[^_\s\n])_(?![\w_])"), r"\1"),    # _italique_
+    (re.compile(r"~~([^~]+)~~"), r"\1"),                 # ~~barre~~
+)
+
+
+def sans_markdown(v):
+    """Retire le balisage Markdown d'un message. Repli : la chaine d'origine."""
+    if not isinstance(v, str) or not v:
+        return v
+    try:
+        lignes = []
+        for l in v.splitlines():
+            l = l.strip()
+            if not l or re.fullmatch(r"[-*_]{3,}", l):
+                continue                      # ligne vide, ou filet horizontal
+            if l.startswith("```") or l.startswith("~~~"):
+                continue                      # ouverture/fermeture de bloc de code
+            l = re.sub(r"^\s*>+\s*", "", l)   # citation
+            # Un titre garde son texte et gagne un deux-points : aplati sur une
+            # seule ligne, « Ce que j'ai decide Je n'ai pas... » collait deux
+            # phrases sans ponctuation entre elles.
+            t = re.match(r"^(#{1,6})\s+(.*)$", l)
+            if t:
+                l = t.group(2).rstrip(" :") + " :"
+            else:
+                # Puce ou numero de liste -> point median. Le texte reste sur
+                # une ligne unique, il lui faut donc une marque de separation.
+                l = re.sub(r"^\s*(?:[-*+]|\d{1,3}[.)])\s+", "\u00b7 ", l)
+            lignes.append(l)
+        out = " ".join(lignes)
+        for motif, remp in _MD:
+            out = motif.sub(remp, out)
+        out = " ".join(out.split())
+        # Un deux-points suivi d'un point median n'apporte rien de plus.
+        out = out.replace(": \u00b7", " :").replace(" :  ", " : ")
+        return out or v
+    except Exception:
+        return v
 
 
 def txt(v):
@@ -250,7 +317,8 @@ def main(argv):
     last_say = None
     msg = data.get("last_assistant_message")
     if isinstance(msg, str) and msg.strip():
-        last_say = " ".join(msg.split())[:LAST_SAY_MAX]
+        # sans_markdown() d'abord, troncature ensuite : cf. son commentaire.
+        last_say = " ".join(sans_markdown(msg).split())[:LAST_SAY_MAX]
     elif old is not None and state != "working":
         last_say = txt(old.get("last_say"))
 
@@ -270,7 +338,58 @@ def main(argv):
     })
 
 
+# --- auto-verification du de-Markdown --------------------------------------
+# `board-event.py --autoverif`. Les quinze cas viennent de deux endroits : les
+# phrases reellement observees le 02/09 sur les conversations vivantes, et les
+# faux positifs trouves en ecrivant la fonction — « 2 * 3 * 4 » que l'italique
+# mordait, et un bloc de code que la cloture avalait entierement une fois le
+# texte aplati sur une ligne.
+#
+# SEUL MODE DE CE FICHIER QUI PEUT RENDRE UN CODE NON NUL. Le contrat « code
+# retour TOUJOURS 0 » protege la session de l'utilisateur d'un hook bavard ;
+# une auto-verification n'est pas un hook, et un test qui ne peut pas echouer
+# ne sert a rien.
+_CAS_MD = (
+    ("Verifie localement : mon commit `1a2b3c4` **s'applique sans conflit** sur la suite",
+     "Verifie localement : mon commit 1a2b3c4 s'applique sans conflit sur la suite"),
+    ("Reponse a `projeta-71`.\n\n## Ce que j'ai decide\n\nJe n'ai **pas** pris son correctif",
+     "Reponse a projeta-71. Ce que j'ai decide : Je n'ai pas pris son correctif"),
+    ("- premier point\n- second point", "\u00b7 premier point \u00b7 second point"),
+    ("1. un\n2. deux", "\u00b7 un \u00b7 deux"),
+    ("Voir [la doc](https://exemple.fr/x) pour la suite", "Voir la doc pour la suite"),
+    ("> une citation\n\ntexte", "une citation texte"),
+    ("---\n\nApres le filet", "Apres le filet"),
+    ("~~annule~~ puis _revu_ et __confirme__", "annule puis revu et confirme"),
+    ("```bash\nls -la\n```", "ls -la"),
+    ("Un fichier board_event_test.py et snake_case_intact",
+     "Un fichier board_event_test.py et snake_case_intact"),
+    ("2 * 3 * 4 = 24", "2 * 3 * 4 = 24"),                 # multiplication, pas italique
+    ("un *mot* en italique", "un mot en italique"),
+    ("chemin /home/x_y/z_w intact", "chemin /home/x_y/z_w intact"),
+    ("", ""),
+    ("Rien a nettoyer ici.", "Rien a nettoyer ici."),
+)
+
+
+def autoverif():
+    ecarts = 0
+    for entree, attendu in _CAS_MD:
+        vu = sans_markdown(entree)
+        if vu != attendu:
+            ecarts += 1
+            print("ECART  %r\n       attendu %r" % (vu, attendu))
+    print("de-Markdown : %d cas, %s"
+          % (len(_CAS_MD), "tout va" if not ecarts else "%d ecart(s)" % ecarts))
+    # Les entrees non textuelles ne doivent jamais lever ni convertir.
+    for v in (None, 42, [], {}):
+        if sans_markdown(v) != v:
+            print("ECART  %r modifie" % (v,)); ecarts += 1
+    return ecarts
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--autoverif":
+        sys.exit(1 if autoverif() else 0)
     try:
         main(sys.argv)
     except BaseException as exc:          # y compris SystemExit / KeyboardInterrupt
