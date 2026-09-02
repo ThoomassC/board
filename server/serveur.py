@@ -1031,15 +1031,33 @@ class Handler(BaseHTTPRequestHandler):
                 return self._envoyer(400, {"erreur": "identifiant de session invalide"})
             if conversation is None:
                 return self._envoyer(200, {"erreur": "module conversation absent"})
-            try:
-                d = conversation.detail(sid)
-            except Exception as e:
-                return self._envoyer(200, {"erreur": "lecture impossible : %s" % e})
-            # on y joint la session courant : le panneau évite un second appel
+            # La session courante est cherchée AVANT la lecture du transcript,
+            # et non après : sa présence dans l'instantané est une preuve de
+            # vivacité, dont `conversation.detail` a besoin pour statuer sur les
+            # agents — un agent lancé et jamais notifié est « au travail » dans
+            # une conversation qui tourne, et « jamais revenu » dans une
+            # conversation éteinte.
+            courante = None
             for g in BOARD.instantane().get("groupes", []):
                 for e in g.get("sessions", []):
                     if e["sid"] == sid:
-                        d["session"] = e
+                        courante = e
+            # DEUX PREUVES, ET LE « ON NE SAIT PAS » EST CONSERVÉ. /proc tranche
+            # seul quand il répond ; il ne répond pas pour une conversation
+            # ancienne, dont le fichier .tty a disparu — et l'absence de cette
+            # conversation de l'instantané dit alors que le board ne la suit
+            # plus. Si les deux preuves manquent, `vivante` reste None et rien
+            # n'est conclu : c'est la doctrine de `session_vivante`, respectée
+            # jusqu'ici.
+            viv = session_vivante(sid, None)
+            if viv is None and courante is None:
+                viv = False
+            try:
+                d = conversation.detail(sid, vivante=viv)
+            except Exception as e:
+                return self._envoyer(200, {"erreur": "lecture impossible : %s" % e})
+            if courante is not None:
+                d["session"] = courante      # le panneau évite un second appel
             return self._envoyer(200, d)
         if route == "/api/chantier":
             if chantier is None:

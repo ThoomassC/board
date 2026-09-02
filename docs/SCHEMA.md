@@ -97,8 +97,9 @@ sauf réécriture par layout.json.
 
 ## L'objet SESSION — produit par le serveur, consommé par le board
 
-C'est la seule structure que le board connaît. Le serveur la construit en
-fusionnant event + meas + config.
+C'est la première des trois structures que le board connaît — les deux autres
+sont l'ARBRE (onglet Chantier) et les SOUS-AGENTS d'une conversation, décrits
+plus bas. Le serveur la construit en fusionnant event + meas + config.
 
     {
       "sid": "a5c7d326-...",
@@ -350,6 +351,75 @@ commande à copier, jamais exécutée. Le seul geste qui agit est
 `config.projects` : le chemin vient du navigateur, et la seule chose que cette
 route doit pouvoir faire est ce que l'onglet montre déjà.
 
+
+## Les SOUS-AGENTS d'une conversation — `conversation.py`, servis par `/api/conv`
+
+Troisième structure connue du board, après l'SESSION et l'ARBRE. Elle répond à
+« qui travaille pour cette conversation en ce moment », dans la fiche qui
+s'ouvre au clic sur une carte.
+
+    "agents": [
+      {"type": "difai-core:difai-dev",   `subagent_type` de l'appel, ou null —
+                                         jamais deviné : un appel peut l'omettre
+       "desc": "A1 attentes et éléments périmés",
+       "modele": "opus",
+       "statut": "en_cours",             en_cours|perdu|echoue|fini
+       "depuis_s": 252,                  SI en cours ou perdu, sinon null
+       "duree_s": null}                  SI fini ou échoué, sinon null
+    ],
+    "agents_en_cours": 2,
+    "agents_total": 5                    `agents` est tronqué à 12, ce compte non
+
+### « Appel non apparié = en vol » NE VAUT PAS pour un agent
+
+C'est la règle des OUTILS, et elle est juste pour eux. Un `Agent` part en
+arrière-plan : son `tool_result` revient en une seconde et demie et n'est qu'un
+accusé de lancement (« Async agent launched successfully », puis un `agentId`).
+Tout appel d'agent est donc apparié aussitôt — la fiche a affiché « 0 en cours
+sur N » pendant un mois, et un lot de huit agents au travail se présentait comme
+huit agents finis.
+
+La fin réelle arrive dans un message `user` portant un bloc
+`<task-notification>` : `<task-id>`, `<status>` (`completed`|`failed`),
+`<summary>`. **`task-id` est égal à l'`agentId` de l'accusé** — vérifié sur
+trois transcripts et dix agents. C'est la seule clé d'appariement admise, pour
+deux raisons mesurées :
+
+  · `<tool-use-id>` CHANGE d'une notification à l'autre pour le même agent : un
+    agent relancé par `SendMessage` renotifie en citant l'identifiant de ce
+    `SendMessage`. Sur un transcript, 3 des 8 identifiants notifiés étaient
+    introuvables parmi les lancements.
+  · les commandes Bash en arrière-plan notifient dans le MÊME format, avec des
+    `task-id` qui ne sont pas des agents. Sur un transcript, 17 notifications
+    pour 1 seul agent. Apparier par `agentId` les écarte sans avoir à deviner à
+    quoi ressemble un identifiant d'agent.
+
+Un agent est donc **en cours tant qu'aucune notification n'est venue après son
+dernier réveil** — son lancement, ou le dernier `SendMessage` qui lui était
+adressé. C'est chronologique, pas booléen : un agent fini puis relancé
+retravaille. Un agent sans accusé de lancement est synchrone, et là son
+`tool_result` EST son résultat.
+
+### `perdu` — un agent ne survit pas à sa conversation
+
+« Lancé, jamais notifié » se lit « au travail » dans une conversation qui tourne
+et « jamais revenu » dans une conversation éteinte. `conversation.detail` reçoit
+donc `vivante` (True|False|**None**), et la route `/api/conv` la construit avec
+DEUX preuves : `serveur.session_vivante` (le pid dans /proc) tranche seule quand
+elle répond ; elle ne répond pas pour une conversation ancienne, dont le fichier
+`.tty` a disparu, et l'absence de cette conversation de l'instantané dit alors
+que le board ne la suit plus. Les deux preuves manquantes laissent `None`, et
+**rien n'est conclu** : l'agent reste au travail plutôt que d'être déclaré perdu
+sur une supposition. C'est la doctrine de `session_vivante`, tenue jusqu'au bout.
+
+`vivante` entre dans la clé du cache de `detail`. Sans cela, une conversation
+qui s'éteint sans que son transcript bouge aurait continué à montrer ses agents
+au travail.
+
+Ces sept situations sont figées dans `python3 server/conversation.py`, qui
+fabrique son transcript au lieu d'en lire un vrai : la plupart des transcripts
+n'ont aucun sous-agent, donc une auto-vérification qui en lit un au hasard peut
+rester muette pendant des semaines — c'est exactement ce qui est arrivé.
 
 ## Vocabulaire des états — français à l'écran, anglais dans le code
 
