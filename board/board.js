@@ -1188,6 +1188,8 @@ const chVus = new Set();         // dépôts déjà vus : le repli PAR DÉFAUT n
                                  // s'applique qu'au premier rendu, sinon chaque
                                  // rafraîchissement annulerait le geste de
                                  // l'utilisateur et refermerait ce qu'il ouvre.
+let chAvecConv = true;           // n'afficher que les projets où une conversation
+                                 // Claude travaille. ALLUMÉ à chaque chargement.
 
 /* POURQUOI CES TROIS ENSEMBLES VIVENT DANS LA PAGE ET PAS AILLEURS.
    localStorage ne sert qu'au thème, et layout.json (côté serveur) ne mémorise que
@@ -1197,7 +1199,130 @@ const chVus = new Set();         // dépôts déjà vus : le repli PAR DÉFAUT n
    contient aujourd'hui du travail non commité frais, et qu'on ne verrait pas au
    chargement. Chaque ouverture de page montre donc l'état complet au moins une
    fois — sauf la réserve, dont le repli repose sur un état FIXE du contrat de
-   données (`etat === "reserve"`) et non sur un jugement du moment. */
+   données (`etat === "reserve"`) et non sur un jugement du moment.
+
+   `chAvecConv` SUIT LA MÊME RÈGLE, et pour la même raison, en pire : il ne plie
+   pas un dépôt, il retire un projet entier de la liste. Le persister, ce serait
+   ouvrir la page un lundi matin sur un écran qui ne montre pas le dépôt où l'on
+   a laissé, vendredi soir, trois fichiers non commités — sans qu'aucune trace du
+   geste de la semaine dernière n'explique pourquoi. Ni localStorage, ni
+   /api/layout : chaque ouverture de page repart d'un filtre ALLUMÉ mais NEUF,
+   dont l'aveu (le compteur de masqués) est réaffiché à côté. */
+
+/* CE QUI EMPÊCHE UN PROJET DE PARTIR EN SILENCE : IL NE PART PAS.
+   Première version de ce filtre : on masquait un projet sans conversation, puis
+   on AVERTISSAIT en ambre s'il contenait du travail en péril. Un avertissement
+   est un pis-aller — il demande d'être lu, d'être compris, et d'être suivi d'un
+   geste (rallumer le filtre) pour retrouver ce qu'on vient de cacher. Il ne
+   protégeait rien : il documentait la perte.
+
+   Désormais l'exception est STRUCTURELLE. Un projet qui porte du travail en
+   péril n'est jamais masqué, point. Le prédicat complet est plus haut, dans
+   `rendChantier` :
+
+     masquer  ⟺  filtre allumé  ET  conversations === 0  ET  aucun arbre en péril
+
+   Ce que ça change, et c'est le fond du sujet : la doctrine de repli juste
+   au-dessus interdit de faire disparaître au chargement « un dépôt qui contient
+   du travail non commité frais ». Tant que le filtre pouvait masquer un tel
+   projet, il reproduisait exactement le pire cas que cette doctrine nomme, en
+   pire (un projet entier, pas un pli), et se contentait de l'avouer à côté.
+   Il ne le peut PLUS : le filtre est devenu incapable de produire ce cas. Une
+   propriété est plus forte qu'un avertissement — et elle ne coûte rien à lire.
+
+   Conséquence assumée : le compteur ambre « N masqués demandent un geste » a été
+   supprimé, en JS comme en CSS. Il compterait toujours zéro par construction, et
+   un jeton qui ne s'allume jamais est du bruit dans une barre qui déborde déjà.
+   Le compteur « N projets masqués », lui, RESTE : il dit ce que l'écran ne
+   montre pas, et ça, aucune propriété structurelle ne le rend inutile.
+
+   CE QUI COMPTE COMME « EN PÉRIL ».
+   Trois faits du contrat de données, lus dans docs/SCHEMA.md et dans
+   `chantier._liberation()` — aucun n'est deviné :
+
+     `fichiers`       fichiers modifiés ET non suivis, non commités. C'est le
+                      seul travail qui ne survivrait pas au retrait de l'arbre,
+                      et c'est nommément le pire cas que la doctrine ci-dessus
+                      interdit de faire disparaître au chargement.
+     `ahead`          commits qui n'existent que dans ce répertoire tant qu'on
+                      ne les a pas poussés. Même famille de perte que
+                      `fichiers` : `_liberation()` les cite tous les deux comme
+                      LES deux choses qui ne se retrouvent nulle part ailleurs.
+     `alerte_niveau`  "agir" ou "bloque" — les contradictions, exactement ce que
+                      compte `a_traiter` et ce que le ⚠ d'un dépôt replié refuse
+                      déjà de taire. Le niveau "info" est EXCLU : c'est du
+                      rangement possible, pas un geste dû.
+
+   `liberable` n'entre pas dans le test, et c'est volontaire : il dit le
+   contraire de ce qu'on cherche. Un arbre libérable est précisément celui qu'on
+   peut perdre sans rien perdre — le masquer ne coûte rien. */
+function chArbreEnPeril(a) {
+  return !!(a.fichiers || a.ahead
+            || a.alerte_niveau === "agir" || a.alerte_niveau === "bloque");
+}
+
+/* ── LES TROIS TEXTES DE L'INTERRUPTEUR, RÉDIGÉS AU MÊME ENDROIT ──────────────
+   L'infobulle du jeton, la description liée à la case et l'annonce disent la
+   même chose à trois publics (souris, lecteur d'écran, oreille). Elles avaient
+   trois rédactions, quatre vocabulaires et deux registres. Les voici ensemble,
+   pour qu'une correction de mot ne puisse plus n'en corriger qu'un tiers.
+
+   UN SEUL NOM POUR LE CONTRÔLE : « avec conversation », celui qui est écrit à
+   l'écran. Un seul registre : on l'ALLUME, on l'ÉTEINT. Le mot « filtre » n'est
+   plus employé (il n'apparaît nulle part dans l'interface) et le mot « décoche »
+   non plus (il désigne une case, or tout le reste dit un interrupteur).
+   Le mot « conversations » n'apparaît pas non plus comme nom de champ : c'en est
+   un côté serveur, ce n'est pas une notion d'utilisateur. */
+function chPluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
+
+function chTexteMasques(projets, arbres, noms) {
+  return chPluriel(projets, "projet masqué", "projets masqués")
+       + " (" + chPluriel(arbres, "arbre", "arbres") + ") : "
+       + noms.join(", ") + ". Aucune conversation Claude n'y travaille, et rien "
+       + "n'y attend de geste. Éteins « avec conversation » pour les revoir.";
+}
+
+function chTexteInterrupteur(projets, arbres, noms, etat) {
+  let t = "Allumé, n'affiche que les projets où une conversation Claude travaille "
+        + "en ce moment. Deux exceptions, toujours : un projet qui porte du "
+        + "travail non commité, des commits non poussés ou une incohérence reste "
+        + "affiché même sans conversation ; un projet dont on ignore le compte "
+        + "reste affiché aussi, car on ne masque rien sur un relevé incomplet.";
+  if (projets) t += " En ce moment : " + chTexteMasques(projets, arbres, noms);
+  else t += " En ce moment, aucun projet n'est masqué.";
+  if (etat.exemptes) t += " " + chPluriel(etat.exemptes, "projet reste affiché",
+                                          "projets restent affichés")
+                        + " au titre de la première exception.";
+  if (etat.inconnus) t += " " + chPluriel(etat.inconnus, "projet reste affiché",
+                                          "projets restent affichés")
+                        + " au titre de la seconde.";
+  return t;
+}
+
+/* L'ANNONCE, ET LA BRANCHE QUI MANQUAIT.
+   « Aucun projet masqué : une conversation travaille dans chacun d'eux » était
+   affirmé y compris quand le serveur avait répondu « je ne sais pas ». C'était
+   le seul endroit du contrôle où la garantie se perdait : une affirmation
+   catégorique sur une donnée absente, et probablement fausse. Elle n'est
+   désormais prononcée que lorsqu'elle est DÉMONTRÉE — aucun masqué, aucun
+   exempté, aucun inconnu. Sinon on dit ce qu'on sait, et pourquoi. */
+function chRaisonsFiltre(m) {
+  if (!m.projets && !m.exemptes && !m.inconnus)
+    return "aucun projet masqué : une conversation travaille dans chacun d'eux.";
+  const bouts = [];
+  bouts.push(m.projets ? chPluriel(m.projets, "projet masqué", "projets masqués")
+                         + " (" + chPluriel(m.arbres, "arbre", "arbres") + ")"
+                       : "aucun projet masqué");
+  if (m.exemptes)
+    bouts.push(chPluriel(m.exemptes, "projet sans conversation reste affiché",
+                         "projets sans conversation restent affichés")
+               + " : du travail y attend un geste");
+  if (m.inconnus)
+    bouts.push(chPluriel(m.inconnus, "projet reste affiché",
+                         "projets restent affichés")
+               + " : on ignore combien de conversations y travaillent");
+  return bouts.join(" ; ") + ".";
+}
 
 function majBadgeChantier(n) {
   const b = $("#ch-badge");
@@ -1215,6 +1340,45 @@ function majBadgeChantier(n) {
        + "pas ton dernier état");
 }
 
+let chEnVol = false;             // un relevé est en route : voir majVeilleChantier
+
+/* ── CE QU'UN RE-RENDU N'A PAS LE DROIT D'EMPORTER ────────────────────────────
+   `rendChantier` vide `#chantier` et reconstruit tout. Deux choses n'y survivent
+   pas, et ce sont les deux positions de l'UTILISATEUR, pas des données : le
+   défilement, et le FOCUS.
+
+   Le focus est le plus grave — WCAG 2.4.3. Mesuré en Chromium instrumenté avant
+   correctif : `focus avant re-rendu auto : ch-relire` → `focus après : BODY`.
+   Tant qu'un relevé ne partait que d'un clic, on pouvait rustiner au cas par
+   cas, et c'est ce qui avait été fait : le chemin de l'interrupteur se
+   refocalisait lui-même, celui du bouton « rafraîchir » non. Depuis que le flux
+   déclenche un relevé SANS AUCUN GESTE (voir `majVeilleChantier`), la rustine
+   par chemin ne tient plus : un utilisateur au clavier posé sur un chevron de
+   dépôt perd sa place parce qu'une conversation a démarré ailleurs sur la
+   machine, dans un projet qu'il ne regardait même pas.
+
+   La restauration porte donc sur le RENDU lui-même, et sur l'élément focalisé
+   quel qu'il soit : on note son `id` s'il est dans la zone, on refocalise après.
+   C'est ce qui oblige tout contrôle reconstruit à porter un `id` stable —
+   `ch-avec-conv`, `ch-relire`, `ch-aide`, et les deux chevrons de chaque dépôt
+   (`…-plier`, `…-reserve`). Un contrôle sans `id` n'est pas rattrapable : c'est
+   le prix de cette approche, et il est écrit ici pour qu'on s'en souvienne en
+   ajoutant le prochain bouton.
+
+   `preventScroll` n'est pas un détail : sans lui, le navigateur ramènerait la
+   zone sur l'élément refocalisé et défferait la ligne du dessus. */
+function chGarderLaPlace(rendu) {
+  const zone = $("#chantier");
+  const actif = document.activeElement;
+  const idFocus = actif && actif !== document.body && zone.contains(actif)
+                ? (actif.id || "") : "";
+  // Le navigateur borne la valeur si la liste a raccourci.
+  const defile = zone.scrollTop || 0;
+  rendu();
+  zone.scrollTop = defile;
+  if (idFocus) document.getElementById(idFocus)?.focus({ preventScroll: true });
+}
+
 async function chargerChantier(force) {
   const zone = $("#chantier");
   if (!zone.dataset.charge) {
@@ -1222,63 +1386,264 @@ async function chargerChantier(force) {
     zone.append(el("p", "ch-vide", "relevé des arbres de travail…"));
   }
   let d;
+  chEnVol = true;
   try { d = await (await fetch("/api/chantier" + (force ? "?force=1" : ""))).json(); }
   catch { d = { groupes: [], total: 0, compteurs: {}, degrade: "serveur injoignable" }; }
-  zone.dataset.charge = "1";
+  finally { chEnVol = false; }
   chData = d;
-  rendChantier(d);
+  chGarderLaPlace(() => rendChantier(d));
+  // APRÈS le rendu, et c'est voulu : écrire dans `dataset` invalide le style de
+  // la zone, et c'est la seule invalidation de ce chemin. Le poser avant ferait
+  // de la lecture de `scrollTop`, deux lignes plus loin, un calcul de mise en
+  // page forcé — pour rien, puisque rien ici ne lit `charge` entre-temps.
+  zone.dataset.charge = "1";
 }
+
+/* ── LE RÉVEIL DE L'ONGLET QUAND UNE CONVERSATION NAÎT OU MEURT ───────────────
+   L'onglet ne demandait un relevé qu'à son ouverture et sur clic. Tant qu'il
+   listait tout, ça se défendait : le contenu bougeait peu. Avec le filtre, ce
+   silence devient un mensonge — démarrer une conversation dans un projet masqué
+   ne le ferait pas réapparaître, et la quitter n'en ferait pas disparaître un
+   autre, tant qu'on n'aurait pas pensé à cliquer « rafraîchir ». Un filtre qui
+   ment sur ce qu'il filtre est pire que pas de filtre du tout.
+
+   POURQUOI CE DÉCLENCHEUR-LÀ, ET PAS UN AUTRE.
+   · Pas un re-rendu par message du flux. Il en arrive un par seconde ; on
+     reconstruirait .ch-tete et toutes les sections 86 400 fois par jour pour un
+     écran qui change deux ou trois fois, et l'utilisateur perdrait le focus au
+     milieu de chaque geste.
+   · Pas un minuteur non plus. `sondeChantier` en tient déjà un, toutes les
+     3 minutes, et il ne sert QUE la pastille : lui faire re-rendre le panneau
+     ferait bouger l'écran sous les mains de l'utilisateur sans qu'il ait rien
+     demandé, ce que la doctrine de cet onglet interdit — et trois minutes de
+     retard sur un projet qui réapparaît, c'est trois minutes de mensonge.
+   · Le bon déclencheur est l'ÉVÉNEMENT lui-même : la RÉPARTITION des
+     conversations vivantes PAR PROJET a changé. On la lit dans l'instantané
+     qu'`appliquer` reçoit déjà, sans rien demander à personne : même endroit et
+     même raison que le réveil de `sondeChantier` juste au-dessus, qui attend
+     lui aussi le flux plutôt que d'interroger le serveur à l'aveugle.
+
+   LA SIGNATURE RETIENT LE COUPLE `sid` + `project`, trié. Le `sid` seul ne
+   suffit pas, et c'est un vrai cas, pas une hypothèse : `conversations` est
+   compté PAR RACINE DE PROJET (docs/SCHEMA.md), donc une conversation qui change
+   de `cwd` d'un projet vers un autre déplace DEUX compteurs — celui qu'elle
+   quitte peut tomber à zéro, celui qu'elle rejoint peut quitter zéro — sans
+   qu'aucun `sid` apparaisse ni disparaisse. Le filtre mentirait alors jusqu'au
+   prochain démarrage ou arrêt ailleurs dans la flotte, ce qui peut être une
+   demi-journée. L'objet SESSION porte `project`, résolu par la même règle que
+   `conversations` (préfixe de `projects[].root`) : c'est exactement la donnée
+   qu'il faut, et elle est déjà là.
+
+   Ce que la signature IGNORE, en revanche : l'état, le contexte, le titre, le
+   coût — ils changent à chaque seconde et ne déplacent aucun projet. C'est toute
+   la différence entre « quelques relevés par jour » et « un par seconde ». Le
+   tri rend la comparaison indifférente à l'ordre des colonnes du board, qui n'a
+   rien à voir avec le chantier. */
+let chSignConv = null;           // conversations vivantes par projet, au dernier relevé
+let chPerime = false;            // le relevé affiché a été calculé avec une autre liste
+
+function majVeilleChantier(snap) {
+  const sign = (snap.groupes || [])
+                 .flatMap(g => (g.sessions || [])
+                   .map(e => e.sid + "@" + (e.project || g.project || "")))
+                 .sort().join("|");
+  if (chSignConv === null) { chSignConv = sign; return; }  // première référence
+  if (sign === chSignConv) return;
+  // Un relevé est déjà en route : on ne prend PAS la nouvelle référence, sinon
+  // le changement serait avalé. L'instantané suivant, une seconde plus tard,
+  // repassera ici et le rattrapera.
+  if (chEnVol) return;
+  chSignConv = sign;
+  if (ongletActif === "chantier" && $("#chantier").dataset.charge) {
+    /* POURQUOI `force`, ALORS QU'UN RELEVÉ EN CACHE SUFFIRAIT AU FILTRE.
+       `conversations` et `conversations_inconnues` sont recalculés à CHAQUE
+       appel, y compris quand la réponse sort du cache de 30 s (docs/SCHEMA.md) :
+       un simple GET rendrait donc déjà le bon `conversations`, et le filtre
+       serait juste pour zéro balayage git. Ce qui ne serait pas juste, c'est le
+       RESTE de la ligne. L'état d'un arbre, lui, vient du relevé mis en cache :
+       le projet réapparaîtrait avec ses arbres étiquetés « réserve » alors
+       qu'une conversation y travaille — exactement ce que cet écran s'interdit
+       ailleurs, au point d'avoir un drapeau (`conversations_inconnues`) pour ne
+       jamais le faire en silence.
+
+       CE QUE COÛTE CE `force`, MESURÉ SUR CE POSTE et non estimé : 155 à 164 ms
+       de mur, 81 processus git lancés, 816 ms de CPU cumulés par relevé forcé.
+       Ce n'est pas rien — c'est trois fois le chiffre qu'annonçait la première
+       rédaction de ce commentaire. Ça reste le bon choix parce que le
+       déclencheur est RARE (quelques fois par jour, uniquement l'onglet ouvert,
+       et jamais deux fois pour le même changement, cf. `chEnVol`) : réapparaître
+       à moitié faux pendant 30 s coûte plus cher à qui lit l'écran. Le nombre de
+       processus, lui, est un sujet SERVEUR (dédoublonnage du balayage) et pas un
+       sujet de cette fonction. */
+    chargerChantier(true);
+  } else {
+    // Onglet fermé : rien à re-rendre, mais le prochain coup d'œil ne doit pas
+    // tomber sur un relevé d'avant le changement.
+    chPerime = true;
+  }
+}
+
+// Ce que le dernier rendu a effectivement retiré de l'écran, et POURQUOI il n'a
+// pas retiré le reste. Lu par l'annonce de l'interrupteur, qui doit savoir
+// distinguer « rien à masquer » de « je ne sais pas » et de « j'ai le droit,
+// mais je m'interdis » (l'exemption).
+let chDernierMasque = { projets: 0, arbres: 0, exemptes: 0, inconnus: 0 };
 
 function rendChantier(d) {
   const zone = $("#chantier");
   zone.textContent = "";
+  // La pastille d'onglet compte TOUT le chantier, filtre allumé ou non : elle
+  // doit rester juste sans même ouvrir l'onglet (cf. sondeChantier), et un
+  // filtre d'AFFICHAGE n'a pas le droit d'éteindre une alerte qui existe.
   majBadgeChantier(d.a_traiter || 0);
 
   const ordre = d.ordre || [];
   const libelles = d.libelles || {};
   const compteurs = d.compteurs || {};
+
+  /* ── TRIER AVANT DE COMPTER, et non l'inverse ─────────────────────────────
+     Ce dépliage des dépôts vivait dans la boucle de rendu, plus bas. Il remonte
+     ici parce que l'en-tête doit compter EXACTEMENT ce que la liste affichera :
+     c'était déjà la règle pour les lignes socle — « un tableau qui cache des
+     lignes sans le dire ment sur ce qu'il montre » — et le filtre de
+     conversations ne peut pas y échapper. */
+  const projets = [];
+  for (const g of (d.groupes || [])) {
+    // Un dépôt qui n'avait qu'une ligne socle disparaît de l'onglet : un en-tête
+    // sans contenu ne renseigne sur rien.
+    const depots = (g.depots || [])
+      .map(dep => ({ repo: dep.repo,
+                     arbres: (dep.arbres || []).filter(a => a.etat !== "socle") }))
+      .filter(dep => dep.arbres.length)
+      .map(dep => ({ ...dep, count: dep.arbres.length }));
+    if (!depots.length) continue;
+    const arbres = depots.flatMap(dep => dep.arbres);
+    /* LE PRÉDICAT DE MASQUAGE — trois conditions, dont une EXEMPTION.
+
+       (1) `g.conversations === 0`. La comparaison est STRICTE, jamais
+           `!g.conversations`. Le champ vaut `null` quand l'instantané des
+           conversations était indisponible au moment du relevé — le serveur dit
+           alors « je ne sais pas », et non « aucune » — et `undefined` face à un
+           serveur qui ne publie pas encore la clé. Les deux sont des IGNORANCES,
+           et on ne fait pas disparaître un projet sur une ignorance. Même règle
+           que `conversations_inconnues`, qui refuse déjà d'étiqueter « réserve »
+           un arbre dont on ne sait pas s'il est occupé.
+
+           LE CHAMP S'APPELLE `conversations`, PAS `convs`, ET C'EST UN PIÈGE
+           ÉVITÉ DE JUSTESSE. Ce fichier lit déjà `g.convs` en un autre endroit
+           (rendu de l'historique) où c'est une LISTE venue de /api/historique,
+           sur une collection qui s'appelle elle aussi `groupes`. Deux types
+           derrière un même nom, dans un même fichier : `0 || []` coerce en
+           silence, et la première lecture inversée n'aurait jamais levé
+           d'erreur. /api/chantier publie donc `conversations`, en toutes
+           lettres. Un serveur antérieur au renommage rend `undefined` ici,
+           c'est-à-dire une ignorance, c'est-à-dire zéro projet masqué : la
+           dégradation va dans le sens sûr.
+
+       (2) AUCUN ARBRE DU GROUPE N'EST EN PÉRIL — l'exemption, dont la doctrine
+           complète est au-dessus de `chArbreEnPeril`. Ce prédicat-là n'a pas
+           changé d'une virgule ; c'est son USAGE qui a changé : il servait à
+           avertir après coup, il empêche maintenant. */
+    const inconnu = typeof g.conversations !== "number";
+    const enPeril = arbres.some(chArbreEnPeril);
+    const masque = chAvecConv && g.conversations === 0 && !enPeril;
+    projets.push({ g, depots, arbres, masque, inconnu,
+                   exempte: chAvecConv && g.conversations === 0 && enPeril });
+  }
+  const montres = projets.filter(p => !p.masque);
+  const caches = projets.filter(p => p.masque);
+  const arbresMontres = montres.flatMap(p => p.arbres);
+  const arbresCaches = caches.flatMap(p => p.arbres);
+  chDernierMasque = { projets: caches.length, arbres: arbresCaches.length,
+                      exemptes: projets.filter(p => p.exempte).length,
+                      inconnus: projets.filter(p => p.inconnu).length };
+
   // `main` et `develop` ne sont pas des chantiers : on n'y travaille pas, on n'y
   // a rien à libérer, et leur ligne occupait un tiers des dépôts PROJET_A. Elles
   // sont masquées — mais COMPTÉES à part dans l'en-tête : un tableau qui cache
-  // des lignes sans le dire ment sur ce qu'il montre.
-  const masques = compteurs.socle || 0;
-  const visible = Math.max(0, (d.total || 0) - masques);
+  // des lignes sans le dire ment sur ce qu'il montre. Ce compteur-là vient bien
+  // du serveur : les lignes socle ne sont dans aucun des tableaux ci-dessus.
+  const socles = compteurs.socle || 0;
+  /* LES NOMBRES DE L'EN-TÊTE SONT RECOMPTÉS SUR CE QUI EST LISTÉ.
+     Une version antérieure les obtenait en SOUSTRAYANT les arbres masqués des
+     totaux du serveur, au motif qu'« une soustraction ne peut pas diverger de ce
+     que le serveur publie ». L'argument est exact et il est à l'envers : diverger
+     du serveur est précisément ce qu'on VEUT ici. L'en-tête ne décrit pas le
+     chantier, il décrit LA LISTE — et la liste applique déjà un filtre que le
+     serveur ignore (`a.etat !== "socle"`, en dur quelques lignes plus haut). La
+     soustraction n'était juste que tant que ce filtre-là restait le seul ; le
+     jour où un second état cesse d'être listé, elle annoncerait un compteur pour
+     un état sans une seule ligne en dessous. Recompter supprime l'hypothèse. */
+  const parEtat = {};
+  for (const a of arbresMontres) parEtat[a.etat] = (parEtat[a.etat] || 0) + 1;
+  const visible = arbresMontres.length;
 
   // ── en-tête : le total, puis un compteur par état
   const tete = el("div", "ch-tete");
   tete.append(el("span", "gros", String(visible)),
               el("span", "lbl", (visible === 1 ? "arbre de travail" : "arbres de travail")));
   for (const e of ordre) {
-    if (e === "socle" || !compteurs[e]) continue;
+    if (e === "socle" || !parEtat[e]) continue;
     const c = el("span", "ch-cpt " + e);
-    c.append(el("b", null, String(compteurs[e])),
+    c.append(el("b", null, String(parEtat[e])),
              el("span", null, (libelles[e] || e).toLowerCase()));
     tete.append(c);
   }
   // « Quand puis-je supprimer un worktree ? » — deux nombres, parce que ce sont
   // deux gestes différents : retirer l'arbre, et retirer l'arbre ET sa branche.
-  if (d.liberables) {
+  const liberables = arbresMontres.filter(a => a.liberable).length;
+  const terminees = arbresMontres.filter(a => a.terminee).length;
+  if (liberables > 0) {
     const c = el("span", "ch-cpt lib");
-    c.append(el("b", null, String(d.liberables)),
-             el("span", null, d.liberables > 1 ? "libérables" : "libérable"));
+    c.append(el("b", null, String(liberables)),
+             el("span", null, liberables > 1 ? "libérables" : "libérable"));
     attr(c, "title", "arbres de travail retirables sans rien perdre : rien de non "
       + "commité, rien à pousser, aucune conversation dedans, aucune PR ouverte");
     tete.append(c);
   }
-  if (d.terminees) {
+  if (terminees > 0) {
     const c = el("span", "ch-cpt fini");
-    c.append(el("b", null, String(d.terminees)),
-             el("span", null, d.terminees > 1 ? "branches terminées" : "branche terminée"));
+    c.append(el("b", null, String(terminees)),
+             el("span", null, terminees > 1 ? "branches terminées" : "branche terminée"));
     attr(c, "title", "en plus déjà dans la base : la branche peut partir avec l'arbre");
     tete.append(c);
   }
 
-  if (masques) {
+  if (socles) {
     const c = el("span", "ch-cpt masque");
-    c.append(el("b", null, String(masques)),
-             el("span", null, masques > 1 ? "socles masqués" : "socle masqué"));
+    c.append(el("b", null, String(socles)),
+             el("span", null, socles > 1 ? "socles masqués" : "socle masqué"));
     attr(c, "title", "les branches main / master / develop ne sont pas des chantiers : "
       + "rien à y libérer, rien à y suivre. Elles ne sont pas listées.");
+    tete.append(c);
+  }
+
+  /* ── L'AVEU DU FILTRE ─────────────────────────────────────────────────────
+     Même grammaire que l'aveu du socle juste au-dessus, et pour la même raison —
+     « N socles masqués », « N projets masqués » : deux fois le même mot pour la
+     même idée, parce que ce sont deux fois la même idée. La rédaction précédente
+     disait « N projets sans conversation », qui se lit comme une observation sur
+     le monde alors que c'est un aveu sur l'écran ; le motif est dans l'infobulle
+     et dans le texte lié, sa place.
+
+     Le compteur `.ch-cpt.masque` existe déjà mais il compte les lignes socle et
+     RIEN D'AUTRE : on ne le détourne pas, on en pose un second à côté, dans la
+     même encre la plus discrète, parce qu'un projet retiré de la liste n'est pas
+     une alerte.
+
+     Ce jeton ne disparaît JAMAIS quand il y a quelque chose à avouer : il est le
+     seul endroit de la barre qui dise que l'écran ne montre pas tout. Le jeton
+     ambre qui l'accompagnait (« N masqués demandent un geste ») a disparu, lui,
+     et pas par allègement : l'exemption structurelle le rend vide par
+     construction — voir la doctrine au-dessus de `chArbreEnPeril`. */
+  const nomsCaches = [...new Set(caches.map(p => p.g.project))];
+  if (caches.length) {
+    const c = el("span", "ch-cpt masque");
+    c.id = "ch-masque-conv";
+    c.append(el("b", null, String(caches.length)),
+             el("span", null, caches.length > 1 ? "projets masqués"
+                                                : "projet masqué"));
+    attr(c, "title", chTexteMasques(caches.length, arbresCaches.length, nomsCaches));
     tete.append(c);
   }
 
@@ -1306,14 +1671,97 @@ function rendChantier(d) {
       + "conversation vivante ne sont pas distingués. Ils apparaissent en réserve "
       + "ou en non commité au lieu d'en cours. Rafraîchis le relevé.");
   }
+  /* ── L'INTERRUPTEUR « avec conversation » ─────────────────────────────────
+     La grammaire visuelle est celle de la bascule de thème — un rail, un
+     curseur — parce que c'est le seul contrôle à deux positions du produit et
+     qu'un commutateur dit ce qu'une case carrée ne dit pas : que ça a deux
+     positions, et qu'on peut revenir. Le label porte donc les DEUX classes :
+     `bascule` apporte la géométrie partagée (board.css), `ch-bascule` n'apporte
+     que ce qui est propre à cet interrupteur — son état, sa boîte, son survol,
+     son anneau. Une seule géométrie pour les deux commutateurs du produit, et
+     aucune ligne recopiée.
+
+     UNE CASE À COCHER NATIVE, et pas un `role="switch"` ni un `aria-pressed`.
+     Le dépôt n'a aucun rôle ARIA aujourd'hui et n'a pas à en gagner un pour un
+     contrôle que HTML sait déjà exprimer : une case est annoncée « coché / non
+     coché », se pilote à la barre d'espace, entre dans la tabulation, et son
+     état vit dans le DOM au lieu d'un attribut qu'il faudrait tenir à jour —
+     exactement l'argument qui fait piloter le chevron des dépôts par
+     `aria-expanded` plutôt que par une classe. Une seule source de vérité pour
+     l'état et pour l'apparence.
+
+     ET LE LIBELLÉ EST ÉCRIT. Les glyphes ☾ / ☀ ont déjà appris à cet écran
+     qu'un pictogramme non mesuré dans les polices embarquées est un pari
+     (cf. board.css) ; rien ici n'est un pictogramme.
+
+     UN SEUL MOT POUR CE CONTRÔLE, PARTOUT. Il s'appelle « avec conversation »,
+     c'est écrit dessus, et c'est le nom employé dans l'annonce, dans l'infobulle
+     et dans l'état vide. On ne dit plus « le filtre » (un mot que l'écran
+     n'écrit nulle part) ni « décoche » (un mot de case à cocher, alors que le
+     dessin, l'infobulle et cette feuille disent tous « interrupteur »). Le
+     registre est celui d'un interrupteur : on l'ALLUME et on l'ÉTEINT. */
+  const bascule = el("label", "bascule ch-bascule");
+  const inp = el("input");
+  inp.type = "checkbox";
+  inp.id = "ch-avec-conv";
+  inp.checked = chAvecConv;
+  /* LA SUBSTANCE DESCEND DANS LE DOM, ET LA DESCRIPTION SE POSE SUR L'INPUT.
+     Elle ne vivait que dans des `title`, et un `title` sur un `<span>` ou sur un
+     `<label>` n'est atteignable ni au clavier ni au lecteur d'écran — vérifié :
+     « sans aria-describedby -> name="avec conversation" desc="" ». Le texte
+     existe donc pour de bon, dans un élément hors-vue référencé par
+     `aria-describedby`, et il porte ce qu'on veut vraiment savoir devant un
+     filtre : ce qu'il masque, lesquels, et ce qu'il ne masquera jamais.
+
+     L'élément est posé DANS `.ch-tete` et pas dans le `<label>` : le contenu du
+     label est le NOM accessible de la case, et y verser trois phrases ferait
+     annoncer « avec conversation N'afficher que les projets où… » à chaque
+     tabulation. Nom court, description longue, chacun à sa place.
+
+     Le `title` reste sur le `<label>` — pour la souris, qui n'a pas d'autre
+     accès — avec exactement le même texte. Une seule fonction le rédige, pour
+     que les deux ne puissent pas diverger. */
+  const notice = chTexteInterrupteur(caches.length, arbresCaches.length,
+                                     nomsCaches, chDernierMasque);
+  const desc = el("span", "ch-hors-vue", notice);
+  desc.id = "ch-conv-desc";
+  attr(bascule, "title", notice);
+  attr(inp, "aria-describedby", "ch-conv-desc");
+  const rail = el("span", "rail");
+  attr(rail, "aria-hidden", "true");
+  bascule.append(inp, rail, el("span", "txt", "avec conversation"));
+  inp.onchange = () => {
+    chAvecConv = inp.checked;
+    if (!chData) return;
+    // Même passage que tous les autres re-rendus : le défilement et le focus
+    // sont rendus à l'utilisateur, et l'interrupteur reconstruit porte le même
+    // `id`, donc c'est bien lui qui reprend le focus.
+    chGarderLaPlace(() => rendChantier(chData));
+    /* LE CHANGEMENT DOIT S'ENTENDRE, pas seulement se voir : c'est le nombre de
+       projets listés qui vient de changer, et rien dans la page ne l'annonce à
+       qui ne la regarde pas. `#avis` est une région live que `avis()` maintient
+       DÉSORMAIS en permanence dans l'arbre d'accessibilité — ça n'a pas toujours
+       été vrai, voir le commentaire d'`avis()`, qui porte la mesure.
+       Et ce n'est pas la confirmation vide que ce commentaire interdit : la
+       charge utile, ici, c'est le nombre de projets qui viennent de quitter
+       l'écran. Aucun nom de projet n'y est interpolé — `avis()` écrit en
+       innerHTML, et un nom de projet vient d'un fichier de config. */
+    avis(chAvecConv ? "<b>« avec conversation » allumé</b> — "
+                      + chRaisonsFiltre(chDernierMasque)
+                    : "<b>« avec conversation » éteint</b> — tous les projets "
+                      + "sont listés.");
+  };
+
   const btn = el("button", "ch-relire", "rafraîchir");
   btn.type = "button";
+  btn.id = "ch-relire";            // rattrapable par chGarderLaPlace
   btn.onclick = () => { btn.disabled = true; chargerChantier(true); };
   // L'aide de cet onglet rejoint le dialogue GLOBAL au lieu d'ouvrir le sien :
   // il n'y a qu'un endroit où chercher de l'aide dans ce produit, et 90 % du
   // contenu y était déjà. Deux rédactions du même sujet finiraient par diverger.
   const aide = el("button", "aide-onglet", "?");
   aide.type = "button";
+  aide.id = "ch-aide";             // rattrapable par chGarderLaPlace
   attr(aide, "title", "À quoi sert cet onglet ?");
   attr(aide, "aria-label", "Aide sur l'onglet Chantier");
   aide.onclick = () => {
@@ -1323,8 +1771,11 @@ function rendChantier(d) {
     requestAnimationFrame(() =>
       $("#aide-chantier")?.scrollIntoView({ block: "start" }));
   };
-  droite.append(frais, btn, aide);
-  tete.append(droite);
+  // L'interrupteur se pose entre la fraîcheur du relevé et les deux boutons :
+  // il dit CE QUE l'écran montre, comme la date de relevé dit DE QUAND il date.
+  // Les deux commandes restent groupées à leur droite.
+  droite.append(frais, bascule, btn, aide);
+  tete.append(droite, desc);
   zone.append(tete);
 
   if (d.degrade) zone.append(el("p", "ch-degrade", d.degrade));
@@ -1334,26 +1785,37 @@ function rendChantier(d) {
         "Aucun arbre de travail sous les racines déclarées."));
     return;
   }
+  if (!montres.length && caches.length) {
+    /* Tout est masqué. Un écran vide qui ne nomme ni la cause de son vide ni le
+       geste qui le remplit est un écran cassé — et c'est le seul moment où le
+       compteur de la barre ne suffit pas, puisqu'il n'y a rien en dessous pour
+       lui donner une échelle.
+       Ce cas est devenu RARE depuis l'exemption : il ne reste atteignable que si
+       aucun projet ne porte de conversation ET qu'aucun ne porte de travail en
+       péril — c'est-à-dire quand il n'y a réellement rien à voir. C'est
+       exactement pour ces moments-là qu'on garde un état vide écrit. */
+    const p = el("p", "ch-vide");
+    p.append(document.createTextNode(
+               "Aucune conversation Claude ne travaille en ce moment, et rien "
+               + "n'attend de geste. "),
+             el("b", null, caches.length
+                + (caches.length > 1 ? " projets sont masqués" : " projet est masqué")),
+             document.createTextNode(
+               " — éteins « avec conversation » ci-dessus pour les revoir."));
+    zone.append(p);
+    return;
+  }
 
-  for (const g of d.groupes) {
-    // Un dépôt qui n'avait qu'une ligne socle disparaît de l'onglet : un en-tête
-    // sans contenu ne renseigne sur rien.
-    const depots = (g.depots || [])
-      .map(dep => ({ repo: dep.repo,
-                     arbres: (dep.arbres || []).filter(a => a.etat !== "socle") }))
-      .filter(dep => dep.arbres.length)
-      .map(dep => ({ ...dep, count: dep.arbres.length }));
-    if (!depots.length) continue;
-    const n = depots.reduce((t, dep) => t + dep.count, 0);
-
+  for (const p of montres) {
+    const n = p.arbres.length;
     const sec = el("section", "ch-grp");
-    if (g.accent) sec.style.setProperty("--acc", g.accent);
+    if (p.g.accent) sec.style.setProperty("--acc", p.g.accent);
     const hd = el("header", "ch-hd");
-    hd.append(el("span", "nm", g.project),
+    hd.append(el("span", "nm", p.g.project),
               el("span", "ct", n + (n > 1 ? " arbres" : " arbre")));
     sec.append(hd);
 
-    for (const dep of depots) sec.append(blocDepot(g, dep, d));
+    for (const dep of p.depots) sec.append(blocDepot(p.g, dep, d));
     zone.append(sec);
   }
 }
@@ -1404,6 +1866,10 @@ function blocDepot(g, dep, d) {
 
   const plierD = el("button", "ch-dplier");
   plierD.type = "button";
+  // `id` stable : c'est ce qui permet à chGarderLaPlace de rendre le focus à ce
+  // chevron précis après un re-rendu — y compris un re-rendu que l'utilisateur
+  // n'a pas demandé (voir majVeilleChantier).
+  plierD.id = ident + "-plier";
   attr(plierD, "aria-expanded", ferme ? "false" : "true");
   attr(plierD, "aria-controls", ident + "-corps");
   attr(plierD, "aria-describedby", ident + "-resume");
@@ -1421,7 +1887,9 @@ function blocDepot(g, dep, d) {
   // a qu'un seul chemin de rendu à garder juste.
   plierD.onclick = () => {
     if (chFerme.has(cle)) chFerme.delete(cle); else chFerme.add(cle);
-    bloc.replaceWith(blocDepot(g, dep, d));
+    // Le bouton qu'on vient d'actionner fait partie de ce qui est détruit : même
+    // passage que les re-rendus complets, et pour la même raison (WCAG 2.4.3).
+    chGarderLaPlace(() => bloc.replaceWith(blocDepot(g, dep, d)));
   };
   dhd.append(plierD);
 
@@ -1452,6 +1920,7 @@ function blocDepot(g, dep, d) {
   if (reserve && !toutReserve) {
     const plier = el("button", "ch-plier");
     plier.type = "button";
+    plier.id = ident + "-reserve";     // même raison que le chevron de dépôt
     attr(plier, "aria-controls", ident + "-corps");
     // Même chevron dessiné, mais plus petit : le pliage de dépôt est
     // l'interaction primaire de la ligne, celui de la réserve est accessoire.
@@ -1807,7 +2276,16 @@ function ongler(quel) {
   $("#attention").hidden = quel !== "board";
   if (quel === "histo") chargerHistorique();
   if (quel === "pr") chargerPR(false);
-  if (quel === "chantier") chargerChantier(false);
+  if (quel === "chantier") {
+    // La répartition des conversations a bougé pendant que l'onglet était
+    // fermé : on force, pour la même raison que dans majVeilleChantier — le
+    // cache rendrait le bon `conversations` mais des ÉTATS d'avant, donc un
+    // projet listé « en réserve » alors qu'on y travaille. Sans changement, on
+    // se contente du cache : c'est le comportement d'origine de l'onglet.
+    const force = chPerime;
+    chPerime = false;
+    chargerChantier(force);
+  }
 }
 
 /* ──────────────────────────────── flux ────────────────────────────────── */
@@ -1819,6 +2297,9 @@ function appliquer(snap) {
   const premier = !dernier;
   dernier = snap; dernierAt = Date.now();
   if (premier) sondeChantier();
+  // Le seul lien entre le flux et l'onglet Chantier : il ne re-rend rien de
+  // lui-même, il regarde si l'ENSEMBLE des conversations vivantes a changé.
+  majVeilleChantier(snap);
   rendChrome(snap);
   if (ongletActif === "board") { rendAttention(snap); rendBoard(snap); }
   rendFlux();

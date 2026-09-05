@@ -239,9 +239,29 @@
     <p>Chaque <b>dépôt</b> se replie d'un clic sur son nom. Replié, il annonce ce
       qu'il contient — et il n'a pas le droit de taire une incohérence&nbsp;: le
       <b>⚠</b> reste visible. Les projets, eux, ne se replient jamais.</p>
+    <p>L'interrupteur <b>avec conversation</b>, en haut à droite du panneau, ne
+      garde que les projets où une conversation Claude travaille en ce moment —
+      les autres attendront le jour où on y retournera. Il est <b>allumé à chaque
+      ouverture de page</b> et ne se mémorise nulle part&nbsp;: une préférence
+      d'affichage qui survit à la nuit finirait par cacher, un lundi matin, le
+      dépôt où l'on a laissé vendredi soir trois fichiers non commités.</p>
+    <p><b>Deux sortes de projets échappent toujours au masquage</b>, et ce ne
+      sont pas des avertissements&nbsp;: ce sont des exceptions. Un projet qui
+      porte du travail <b>non commité</b>, des <b>commits non poussés</b> ou une
+      <b>incohérence</b> reste affiché même si aucune conversation n'y
+      travaille — ces choses-là
+      n'existent que dans leur répertoire, et un écran qui les fait disparaître
+      pour faire propre est un écran qui ment. Un projet dont on <b>ignore</b> le
+      nombre de conversations reste affiché lui aussi&nbsp;: quand l'instantané
+      des conversations manque au moment du relevé, le serveur répond « je ne
+      sais pas » et non « aucune », et on ne range rien sur cette réponse-là.</p>
+    <p>Il ne masque donc jamais en silence, et jamais ce qui compte. La barre
+      porte un compteur <b>projets masqués</b> qui dit combien de projets ne sont
+      pas affichés, avec leurs noms au survol. Éteindre l'interrupteur les
+      remontre tous.</p>
     <ul class="etats">
       <li><b>● en cours</b> — une conversation vivante travaille dedans.</li>
-      <li><b style="color:var(--sky)">➜ en revue</b> — une PR ouverte porte cette
+      <li><b style="color:var(--amber)">➜ en revue</b> — une PR ouverte porte cette
         branche. La balle est chez quelqu'un d'autre, mais l'horloge tourne.</li>
       <li><b style="color:var(--amber)">✋ non commité</b> — du travail modifié
         que ni PR ni conversation ne surveille. C'est la seule façon silencieuse

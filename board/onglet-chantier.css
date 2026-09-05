@@ -7,10 +7,25 @@
 
    LE VOCABULAIRE DES PIGMENTS EST CELUI DE LA BOARD, à la lettre — c'est tout
    l'intérêt d'un quatrième onglet dans le même produit : rien à réapprendre.
-     ambre  = il faut ta main            (non commité, comme BLOQUÉ)
-     ciel   = du travail livré dort      (en revue, comme À RELIRE)
+     ambre  = il faut ta main            (non commité, en revue, relevé vieilli,
+                                          bandeau dégradé — voir ci-dessous)
+     vert   = c'est bouclé               (branche terminée, comme dans l'onglet PR)
+     ciel   = accent de CHROME           (anneau de focus, interrupteur)
      gris   = plus aucun signe           (réserve, comme SILENCE)
      aucune = rien à faire               (en cours et socle, comme AU TRAVAIL)
+
+   DEUX RECTIFICATIFS, parce que cette table était fausse et qu'on lit une table
+   de pigments AVANT de choisir une couleur :
+
+   · L'AMBRE N'EST PAS RÉSERVÉ À « non commité », et ne l'a jamais été dans cet
+     onglet. Il porte aussi `.ch-cpt.en_revue`, `.ch-frais.vieux` et
+     `.ch-degrade`. Ce qu'il signifie vraiment, et qui couvre les quatre : « ça
+     n'ira pas tout seul ». Toute rédaction qui promet « la seule encre de… »
+     est à vérifier avant d'être crue.
+   · CIEL NE VEUT PAS DIRE « du travail livré dort ». `en_revue` est AMBRE ici.
+     Depuis la direction Ardoise, --sky est l'accent du CHROME et rien d'autre
+     (board.css le dit en tête) : dans cette feuille il ne sert qu'à l'anneau de
+     focus et à l'interrupteur, qui ne disent rien sur les arbres.
 
    « En cours » et « socle » partagent l'absence de couleur, et c'est juste :
    ni l'un ni l'autre ne demande quoi que ce soit. Le glyphe (● contre ·) et la
@@ -21,15 +36,38 @@
   font-family:var(--mono);
 }
 
-/* ── en-tête : les cinq compteurs ─────────────────────────────────────────
-   Cinq nombres et non un seul. Un compteur unique « 16 à traiter » sur 29
+/* ── en-tête : un compteur par état, et les aveux ─────────────────────────
+   Un nombre par état, et non un seul. Un compteur unique « 16 à traiter » sur 29
    arbres ne trierait rien — exactement le défaut que l'onglet PR a fini par
-   avoir en laissant `dort` gonfler `a_traiter`. Ici chaque état garde son
-   nombre, et seul « non commité » porte l'ambre. */
+   avoir en laissant `dort` gonfler `a_traiter`.
+   Le nombre de jetons N'EST PAS FIXE : selon le relevé il en apparaît de deux à
+   huit (le gros total, un par état listé, `libérables`, `branches terminées`,
+   `socles masqués`, `projets masqués`). Une rédaction antérieure annonçait « les
+   cinq compteurs » et « seul non commité porte l'ambre » : les deux étaient
+   fausses. Voir la table de pigments en tête de fichier.
+
+   `position:relative` ancre `.ch-hors-vue`, le texte lu par les lecteurs d'écran
+   et par eux seuls, qui est posé en fin de barre.
+
+   `row-gap` PLUS SERRÉ QUE `column-gap`, et c'est mesuré : `gap:16px` servait
+   aussi de gouttière verticale, et la barre passait de ~46 à ~86 px de haut dès
+   qu'elle se cassait en deux lignes. Deux lignes de jetons ne sont pas deux
+   paragraphes ; 8 px suffisent à les distinguer, dans un panneau dont toute la
+   doctrine est de se lire d'un coup d'œil. */
 .ch-tete{
-  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  position:relative;
+  display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;
   padding:11px 14px; margin-bottom:18px;
   border:1px solid var(--line); border-radius:var(--r-panneau); background:var(--panel);
+}
+/* Présent dans le DOM et dans l'arbre d'accessibilité, absent de l'écran. Sert
+   à faire descendre dans le document ce qui ne vivait que dans des `title` —
+   inatteignables au clavier comme au lecteur d'écran (WCAG 1.3.1). `clip-path`
+   et non `display:none` ni `visibility:hidden` : ces deux-là retireraient le
+   texte de l'arbre, ce qui est exactement le défaut qu'on corrige. */
+.ch-hors-vue{
+  position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap;
 }
 .ch-tete .gros{font-size:19px; font-weight:700; color:var(--t1)}
 .ch-tete .lbl{font-size:11.5px; color:var(--t3); letter-spacing:.06em}
@@ -44,11 +82,29 @@
    dit plutôt que de laisser croire qu'il montre tout. Encre la plus discrète. */
 .ch-cpt.masque b{color:var(--t3); font-weight:400}
 .ch-cpt.masque{cursor:help}
+/* `.ch-cpt.geste` — le jeton ambre « N masqués demandent un geste » — a été
+   SUPPRIMÉ, et pas pour alléger la barre. Un projet qui porte du travail en
+   péril n'est plus masqué du tout : ce compteur vaudrait zéro par construction
+   (voir la doctrine au-dessus de `chArbreEnPeril`, board.js). Il posait par
+   ailleurs trois problèmes qu'aucune retouche ne réglait : il comptait des
+   ARBRES à côté d'un jeton qui compte des PROJETS, il était le seul jeton
+   entièrement en pigment de la barre pour l'information la moins fréquente, et
+   il n'était ni cliquable ni atteignable au clavier. */
 .ch-cpt.lib b{color:var(--t2)}
 .ch-cpt.fini b{color:var(--green)}
 .ch-cpt.en_revue b{color:var(--amber)}
 .ch-cpt.en_cours b{color:var(--t1)}
-.ch-tete .droite{margin-left:auto; display:flex; align-items:center; gap:12px}
+/* `flex-wrap` N'EST PAS UN CONFORT : sans lui, ce groupe est indéformable.
+   Mesuré à 320 px de large, avant correctif : `#chantier scrollWidth 368 /
+   clientWidth 320` avec l'interrupteur, `320/320` sans — la barre débordait
+   horizontalement, ce qu'interdit WCAG 1.4.10, parce que fraîcheur +
+   interrupteur + rafraîchir + ? font 335 px d'un bloc que rien n'autorisait à se
+   casser. Le `row-gap` serré vient de `.ch-tete`, dont ce groupe hérite l'idée :
+   une deuxième ligne ne doit pas coûter 40 px de hauteur. */
+.ch-tete .droite{
+  margin-left:auto; display:flex; align-items:center; flex-wrap:wrap;
+  gap:6px 12px; justify-content:flex-end;
+}
 .ch-frais{font-size:11px; color:var(--t3)}
 .ch-frais.vieux{color:var(--amber)}
 .ch-relire{
@@ -59,6 +115,125 @@
 .ch-relire:hover{color:var(--t1); background:var(--card)}
 .ch-relire:disabled{opacity:.5; cursor:default}
 .ch-relire:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ── L'INTERRUPTEUR « avec conversation » ─────────────────────────────────────
+   Le label porte `bascule` EN PLUS de `ch-bascule` : la géométrie du commutateur
+   (rail 20 × 11, curseur de 9, glissement de 180 ms) vit dans board.css et n'est
+   plus recopiée ici. Elle l'a été, et c'était une dette : une seule déclaration
+   de `.bascule` posait problème — la position du curseur, que
+   `:root[data-theme="sombre"]` liait au thème de la page — et huit étaient
+   recopiées pour elle, protégées par la promesse de rester « identiques au
+   millimètre ». board.css expose désormais quatre custom properties
+   (`--rail-pos`, `--rail-fond`, `--rail-pouce`, `--rail-contour`) et ne lie plus
+   que `.theme.bascule` au thème. Cette feuille ne déclare donc plus QUE ce qui
+   est propre à cet interrupteur-ci : son état, sa boîte, son survol, son anneau.
+
+   LA CASE À COCHER NATIVE EST LE CONTRÔLE. Elle sort du flux visuel mais NI du
+   DOM NI DE LA TABULATION — ni `display:none` ni `visibility:hidden`, qui la
+   retireraient des deux. Le rail n'est qu'un dessin ; c'est la case qui porte
+   l'état, le clavier et la barre d'espace. Un seul objet à tenir juste, et rien
+   à synchroniser entre ce que voit l'œil et ce qu'annonce le lecteur d'écran.
+
+   ── LA BOÎTE DE CONTRÔLE, QUI MANQUAIT ───────────────────────────────────────
+   `.ch-relire` fait ~26 px de haut, `.theme` 28, cet interrupteur en faisait
+   15,5 : le seul contrôle sans forme englobante de la barre était le nouveau,
+   coincé entre deux boutons, et au repos il se lisait comme une légende avec un
+   point. Le dépôt a déjà tranché la question (board.css, `.theme`) : « une
+   bordure de contrôle SE MÉRITE PAR L'ÉTAT », bordure transparente qui réserve
+   sa place, rien ne bouge au survol. Padding et bordure sont pris à
+   `.ch-relire`, au pixel, pour que deux boîtes voisines soient la même boîte —
+   étant entendu que `.ch-relire`, lui, porte encore sa bordure AU REPOS et
+   enfreint donc la règle qu'on applique ici. Ce n'est pas un oubli : c'est un
+   bouton existant que ce lot n'a pas mandat de restyler.
+   Bénéfice mesuré au passage : la cible tactile faisait 144 × 15,5 px et ne
+   satisfaisait WCAG 2.5.8 que par l'exception d'espacement, avec une marge
+   nulle ; le padding vertical règle le sujet sans invoquer l'exception. */
+.ch-bascule{
+  position:relative;           /* ancre la case retirée du flux, cf. plus bas */
+  display:flex; align-items:center; gap:7px; cursor:pointer;
+  font-family:var(--mono); font-size:11.5px; color:var(--t3);
+  white-space:nowrap; user-select:none;
+  padding:5px 11px; border:1px solid transparent; border-radius:var(--r-ctrl);
+}
+.ch-bascule input{
+  position:absolute; width:1px; height:1px; margin:0; padding:0;
+  opacity:0; pointer-events:none;
+}
+/* ── LE CONTRASTE DU COMMUTATEUR — WCAG 1.4.11, seuil 3:1 ─────────────────────
+   L'état est porté par la POSITION du curseur dans le rail. Sans rail
+   perceptible, on regarde un point de 9 px se déplacer de 9 px sans repère. Le
+   dessin d'origine échouait sur les deux thèmes ET sur les deux états ; le pire
+   était l'état ALLUMÉ, c'est-à-dire celui qui masque des projets.
+
+   Ratios calculés sur les hex réels de board.css
+   (sombre : panel #201E2B, line #363146, sky #9A8CFF, t3 #9691AC, t1 #F5F3FB ·
+    clair  : panel #FBFAFD, line #EAE7F2, sky #5B45C9, t3 #6E6885, t1 #1A1825) :
+
+                                          AVANT              APRÈS
+                                       sombre  clair      sombre  clair
+     forme du rail éteint / --panel      1,31   1,17        5,42   5,07   contour --t3
+     forme du rail allumé / --panel      2,30   1,98        5,90   6,43   rail plein --sky
+     curseur allumé / son rail           2,56   3,25        5,90   6,43   curseur --panel
+     curseur éteint / son rail           4,12   4,32        4,12   4,32   inchangé
+     contour au survol / --panel          —      —         14,90  16,81   contour --t1
+
+   Le contour `--t3` de l'état éteint est le DÉFAUT de `.bascule` : il n'est plus
+   redéclaré ici, la bascule de thème en profite aussi (6,12 / 4,55 sur --chrome).
+
+   DEUX DÉCISIONS, ET POURQUOI PAS LES AUTRES.
+   · Un CONTOUR de 1 px donne une forme au rail éteint, ce qu'un fond à 1,3:1 ne
+     faisait pas. `box-shadow` et non `border` : la géométrie interne (curseur de
+     9 dans 11) ne bouge pas d'un pixel. Il n'entre pas en collision avec
+     l'anneau de focus, posé 2 px plus loin et sur la boîte, pas sur le rail.
+   · Le rail allumé passe du MÉLANGE au pigment PLEIN. Le mélange était la
+     mauvaise piste, et c'est arithmétique : plus on y met de --sky pour décoller
+     du panneau, moins le curseur --sky se détache du rail. Les deux exigences
+     tirent en sens inverse et le meilleur compromis plafonnait à 3,01 en sombre
+     — deux centièmes au-dessus du seuil, ce qui n'est pas une marge. Rail plein
+     + curseur en --panel donne 5,90 / 6,43 des deux côtés à la fois. Le curseur
+     devient la surface découpée dans le rail, ce qui est aussi la lecture la
+     plus juste du geste.
+     --sky reste légitime : accent du CHROME depuis la direction Ardoise, et un
+     interrupteur d'affichage est du chrome — il ne dit rien sur les arbres.
+
+   L'APPARENCE DÉCOULE DE L'ÉTAT DE LA CASE, comme le chevron des dépôts découle
+   de son `aria-expanded` : aucune classe à poser en JS, donc aucune chance que
+   le dessin dise autre chose que le contrôle.
+
+   `--rail-pos:1px` est POSÉ, et non laissé au défaut. C'est une ceinture, pas un
+   pléonasme : la position est la seule variable qu'une règle de board.css
+   pourrait un jour reposer plus haut dans l'arbre — c'est déjà ce que fait
+   `:root[data-theme="sombre"] .theme.bascule`. La déclarer sur le rail lui-même
+   rend cet interrupteur imperméable à ce que `.bascule` gagnera plus tard : sa
+   position ne dépend QUE de sa case, ce qui était tout l'enjeu du découplage. */
+.ch-bascule .rail{--rail-pos:1px}
+.ch-bascule input:checked ~ .rail{
+  --rail-pos:10px; --rail-fond:var(--sky);
+  --rail-contour:var(--sky); --rail-pouce:var(--panel);
+}
+.ch-bascule input:checked ~ .txt{color:var(--t1)}
+/* ── LE SURVOL, QUI ÉTAIT MORT DANS L'ÉTAT PAR DÉFAUT ─────────────────────────
+   L'interrupteur naît ALLUMÉ. Dans cet état, `.txt` était déjà à --t1 par
+   `input:checked ~ .txt`, le curseur avait un fond direct et le rail un mélange
+   fixe : le survoler ne produisait pas un pixel de différence. Symétriquement,
+   éteint + survol fabriquait exactement le signal visuel de l'état allumé — le
+   texte qui passe à --t1. Deux états qui se ressemblent au survol, c'est un
+   contrôle qui ment.
+   Le survol quitte donc l'encre du texte, qui appartient à l'ÉTAT, pour la boîte
+   et le rail, qui n'appartiennent qu'à lui. La boîte prend l'idiome de
+   `.ch-relire:hover` (fond --card, bordure --line) ; le contour du rail monte à
+   --t1, visible dans les DEUX états sans en imiter aucun. */
+.ch-bascule:hover{background:var(--card); border-color:var(--line)}
+.ch-bascule:hover .rail{--rail-contour:var(--t1)}
+/* L'ANNEAU CEINT LE CONTRÔLE ENTIER, et non le seul rail de 20 × 11 : depuis que
+   la boîte existe, cercler le rail désignerait le dessin plutôt que la chose sur
+   laquelle on vient de tabuler. `:has()` parce que la case est un enfant du
+   label et que c'est l'ancêtre qu'il faut atteindre — déjà employé dans
+   fiche.css. `:focus-visible` et non `:focus` : un clic à la souris ne laisse
+   pas d'anneau derrière lui, la tabulation si. Règle de tout cet onglet.
+   Aucun `@media (prefers-reduced-motion)` ici : les deux transitions sont celles
+   de `.bascule`, et board.css les neutralise déjà pour les deux commutateurs. */
+.ch-bascule:has(input:focus-visible){outline:2px solid var(--sky); outline-offset:2px}
 
 .ch-degrade{
   padding:10px 13px; margin-bottom:16px; font-size:11.5px; line-height:1.6;
