@@ -2160,14 +2160,50 @@ dlgFiche.addEventListener("click", ev => { if (ev.target === dlgFiche) dlgFiche.
    Jamais pour féliciter. Le second usage est né avec les gestes de l'onglet
    Chantier, qui ne font qu'AMENER : ils remettent un chemin ou une commande à
    l'utilisateur au lieu d'agir eux-mêmes. Une confirmation vide (« copié ! »)
-   resterait interdite ; ce qui est affiché ici, c'est la charge utile. */
+   resterait interdite ; ce qui est affiché ici, c'est la charge utile.
+
+   ── POURQUOI `hidden` NE SERT PLUS À CACHER CETTE BOÎTE ──────────────────────
+   `#avis` porte `role="status" aria-live="polite"` et le code affirmait ailleurs
+   que c'était « le seul role=status PERMANENT de l'écran », donc annoncé de
+   façon fiable. C'ÉTAIT FAUX, et c'est mesuré. `hidden` vaut `display:none`, et
+   `avis()` posait le contenu PUIS levait `hidden` — la région et son texte
+   entraient dans l'arbre d'accessibilité au même instant, exactement le cas
+   qu'une région live permanente est censée éviter (WCAG 4.1.3). Dump de l'arbre,
+   en Chromium instrumenté, sur les trois techniques :
+
+     display:none (`hidden`)         -> ignored=true, reason "notRendered"
+     visibility:hidden               -> ignored=true, reason "notVisible"
+     opacity:0 + pointer-events:none -> role=status, ignored=false   ← retenu
+
+   La région est donc posée dans l'arbre UNE FOIS, au chargement, et n'en sort
+   plus jamais : seul son TEXTE change ensuite, ce qui est précisément la
+   mutation qu'une région live sait annoncer. Les styles de neutralisation sont
+   posés en ligne depuis ici plutôt que dans board.css parce qu'ils sont
+   indissociables de ce mécanisme-là : c'est du comportement, pas de l'apparence,
+   et les séparer permettrait à l'un de partir sans l'autre. La boîte garde
+   toutes ses règles de board.css, elle est simplement peinte à alpha zéro.
+
+   Le texte est VIDÉ à l'extinction, et pas seulement rendu transparent : une
+   région live qui garde son dernier message laisse un avis d'il y a une heure
+   sous le curseur virtuel d'un lecteur d'écran. `aria-relevant` vaut par défaut
+   « additions text » ; les lecteurs d'écran courants n'annoncent pas les
+   suppressions, et le silence est de toute façon le bon résultat ici. */
 let avisTimer = null;
+const zoneAvis = $("#avis");
+zoneAvis.hidden = false;
+zoneAvis.style.opacity = "0";
+zoneAvis.style.pointerEvents = "none";
+
 function avis(html) {
-  const el = $("#avis");
-  el.innerHTML = html;
-  el.hidden = false;
+  zoneAvis.innerHTML = html;
+  zoneAvis.style.opacity = "1";
+  zoneAvis.style.pointerEvents = "";
   clearTimeout(avisTimer);
-  avisTimer = setTimeout(() => { el.hidden = true; }, 6000);
+  avisTimer = setTimeout(() => {
+    zoneAvis.style.opacity = "0";
+    zoneAvis.style.pointerEvents = "none";
+    zoneAvis.textContent = "";
+  }, 6000);
 }
 
 /* ─────────────────────────── aide ────────────────────────────────────────── */
