@@ -100,6 +100,42 @@ LIBELLE = {"blocked": "BLOQUÉ", "error": "ERREUR", "silent": "SILENCE",
            "review": "À RELIRE", "working": "AU TRAVAIL"}
 
 
+class EtatsIllisibles(Exception):
+    """Le dossier d'états n'a pas pu être énuméré : ON NE SAIT PAS.
+
+    Exception dédiée, et non un `return []`, parce que la nuance qu'elle porte
+    est celle sur laquelle tout l'onglet Chantier est bâti : « aucune
+    conversation ne tourne » et « je n'ai pas pu regarder » sont deux réponses
+    différentes, et une seule des deux autorise le client à masquer un projet.
+    Un dossier illisible (droits, montage tombé, suppression pendant la lecture)
+    est l'échec le PLUS probable de cette lecture, et c'est précisément celui
+    qu'une liste vide déguisait en réponse sûre.
+
+    Elle est distincte d'une panne quelconque pour que les appelants puissent la
+    traiter comme un état dégradé attendu — pas comme un bug à faire remonter.
+    """
+
+
+# Une panne qui se répète une fois par seconde (la boucle SSE) ne doit pas
+# noyer la sortie : on ne la journalise qu'une fois par minute et par motif.
+# Le dépôt n'a pas de journal — les modules parlent sur la sortie standard —
+# donc les pannes vont sur stderr, où elles ne polluent pas le flux SSE.
+_PLAINTES = {}
+
+
+def plainte(cle, message, toutes_les_s=60.0):
+    """Signale une panne sur stderr, au plus une fois par `toutes_les_s`."""
+    maintenant = time.time()
+    if maintenant - _PLAINTES.get(cle, 0.0) < toutes_les_s:
+        return
+    _PLAINTES[cle] = maintenant
+    try:
+        print("%s  board: %s" % (time.strftime("%H:%M:%S"), message),
+              file=sys.stderr, flush=True)
+    except Exception:
+        pass                       # journaliser ne doit jamais casser l'appelant
+
+
 # ---------------------------------------------------------------- utilitaires
 def lire_json(chemin, defaut=None):
     """Lecture tolérante : un fichier absent ou à moitié écrit ne casse rien."""
@@ -669,6 +705,20 @@ class Board:
         # qu'au premier rendu de la statusline — voire au premier prompt si
         # celle-ci tarde. Avec lui, elle prend sa place dans sa colonne tout de
         # suite, avant même qu'on lui ait parlé.
+        #
+        # UN ÉCHEC ICI REMONTE, IL NE REND PAS UNE LISTE VIDE.
+        # C'était un `return []`, et c'était le trou par lequel tous les
+        # garde-fous du dessous étaient contournés : le dossier d'états devient
+        # illisible (droits, montage tombé, suppression) pendant que trois
+        # conversations tournent, et TOUT ce qui est bâti là-dessus conclut
+        # « aucune conversation » au lieu de « je ne sais pas ». Vérifié :
+        # `conversations_inconnues: false`, `conversations: 0` sur chaque
+        # groupe, et l'onglet Chantier masquait alors la totalité des projets en
+        # affirmant qu'aucun travail n'était en cours. Un écran faux et sûr de
+        # lui est pire qu'un écran qui avoue.
+        #
+        # La distinction ne peut pas être rétablie plus bas : à partir d'ici la
+        # liste vide est indiscernable d'un poste au repos.
         sids = set()
         try:
             for f in os.listdir(ETATS):
@@ -676,8 +726,8 @@ class Board:
                     if f.endswith(suffixe):
                         sids.add(f[:-len(suffixe)])
                         break
-        except Exception:
-            return []
+        except OSError as e:
+            raise EtatsIllisibles("%s : %s" % (ETATS, e))
 
         index_pr = self._index_pr()
         out = []
@@ -864,14 +914,14 @@ class Board:
         except Exception:
             return None
 
-    def instantane(self):
-        self.recharge_config()
-        maintenant = int(time.time())
-        agents_nouveau_tour()          # cf. AGENTS_BUDGET_MS
-        els = self.sessions(maintenant)
-        self.dernieres_sessions = els
-        self.dernieres_sessions_at = maintenant
+    def _colonnes(self, presents):
+        """(colonnes, repli) — l'ordre des colonnes du board.
 
+        Extrait d'`instantane()` parce que l'instantané AVEUGLE (dossier d'états
+        illisible) doit montrer exactement les mêmes colonnes, vides : c'est ce
+        qui distingue « je ne sais pas » d'un board effacé. Deux copies de cette
+        règle auraient divergé au premier réglage de layout.json.
+        """
         # Ordre des colonnes : config d'abord, layout.json s'il en impose un autre.
         ordre = [p.get("name") for p in self.cfg.get("projects", [])]
         repli = self.cfg.get("fallback_project", "AUTRE")
@@ -896,13 +946,39 @@ class Board:
         # projet est prêt » et porte le nom de son lanceur.
         # Le REPLI reste conditionnel : une colonne « AUTRE » vide ne dirait
         # rien, puisqu'on ne déclare pas ce seau, on y tombe.
-        presents = {e["project"] for e in els}
         colonnes = [n for n in ordre if n != repli]
         for n in sorted(presents):
             if n not in colonnes and n != repli:
                 colonnes.append(n)
         if repli in presents:
             colonnes.append(repli)   # le repli est TOUJOURS en dernier
+        return colonnes, repli
+
+    def instantane(self):
+        self.recharge_config()
+        maintenant = int(time.time())
+        agents_nouveau_tour()          # cf. AGENTS_BUDGET_MS
+        try:
+            els = self.sessions(maintenant)
+        except EtatsIllisibles as e:
+            # ON NE SAIT PAS, ET ON LE DIT — sans casser l'écran pour autant.
+            # `_flux()` avale toute exception et referme la connexion SSE : la
+            # laisser remonter d'ici, c'est un board qui se fige, ce qui est le
+            # remède pire que le mal. On rend donc un instantané AVEUGLE, qui
+            # garde ses colonnes et avoue son trou, et surtout on laisse
+            # `dernieres_sessions` à None : c'est ce None que `sessions_connues`
+            # puis `chantier.scan` transforment en `conversations: null` plutôt
+            # qu'en zéro.
+            plainte("etats", "dossier d'états illisible (%s) — instantané "
+                             "aveugle servi, aucune conversation n'est niée" % e)
+            self.dernieres_sessions = None
+            self.dernieres_sessions_at = 0
+            return self._instantane_aveugle(maintenant, str(e))
+        self.dernieres_sessions = els
+        self.dernieres_sessions_at = maintenant
+
+        presents = {e["project"] for e in els}
+        colonnes, repli = self._colonnes(presents)
 
         accents = {p.get("name"): p.get("accent") for p in self.cfg.get("projects", [])}
         cartes = self.layout.get("cards") or {}
@@ -1009,6 +1085,47 @@ class Board:
             # la seule où proposer une adoption a un sens.
             "fallback": repli,
             "candidats": candidats_projets(els, self.cfg),
+            # Toujours présent, pour que « je n'ai pas pu regarder » soit une
+            # valeur du contrat et non l'absence d'une clé. `null` = on a
+            # regardé ; une chaîne = le motif de l'aveuglement.
+            "sessions_indisponibles": None,
+        }
+
+    def _instantane_aveugle(self, maintenant, raison):
+        """L'instantané quand le dossier d'états n'a pas pu être lu.
+
+        Trois refus, et ce sont eux qui font la valeur de cette fonction :
+
+          · on ne rend pas `total: 0` — on ne sait pas combien il y en a, et un
+            zéro serait exactement le mensonge qu'on vient de retirer d'un cran
+            plus bas ;
+          · on ne NOTIFIE pas et on ne REPEINT pas. `notifier.evaluate([])`
+            verrait toutes les conversations disparues d'un coup, et
+            `peindre([])` rendrait leur fond d'origine à des panes bien vivants.
+            Deux effets de bord irréversibles déclenchés par une ignorance ;
+          · on ne touche pas au bandeau d'attention : ses items hors
+            conversation viennent des caches Chantier et PR, qui n'ont rien à
+            voir avec ce dossier, mais les mêler à un instantané aveugle
+            laisserait croire que la liste est complète.
+
+        Les colonnes, elles, restent : un board vide et muet ressemble à un
+        board au repos. Un board avec ses colonnes et un motif d'aveuglement
+        ressemble à ce qu'il est.
+        """
+        colonnes, repli = self._colonnes(set())
+        accents = {p.get("name"): p.get("accent") for p in self.cfg.get("projects", [])}
+        return {
+            "now": maintenant, "total": None, "mode": "L",
+            "account": lire_json(os.path.join(RACINE, "account.json"), {}) or {},
+            "groupes": [{"project": n, "accent": accents.get(n),
+                         "count": 0, "sessions": []} for n in colonnes],
+            "attention": [], "attente_degrade": None,
+            "capteurs_age_s": None,
+            "notify_actif": bool((self.cfg.get("notify") or {}).get("enabled")
+                                 and self.notifieur is not None),
+            "fallback": repli,
+            "candidats": [],
+            "sessions_indisponibles": raison,
         }
 
     def sessions_connues(self, tolerance_s=15):
@@ -1028,6 +1145,13 @@ class Board:
         Ne rend None que si le recalcul lui-même échoue. Dans ce cas seulement,
         l'écran dit qu'il ne sait pas — plutôt que d'étiqueter « réserve » un
         arbre où une conversation travaille.
+
+        Ce `except` n'était pas un filet théorique : l'échec le plus probable de
+        `sessions()` — le dossier d'états illisible — ne l'atteignait JAMAIS,
+        parce qu'il était converti en liste vide un cran plus bas. Le None
+        promis ici n'était donc pas rendu, et l'onglet Chantier recevait « aucune
+        conversation » là où il aurait dû recevoir « on ne sait pas ». C'est
+        `EtatsIllisibles` qui rend cette promesse tenable.
         """
         if (self.dernieres_sessions is not None
                 and (int(time.time()) - self.dernieres_sessions_at) <= tolerance_s):

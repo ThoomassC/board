@@ -239,6 +239,44 @@ Le serveur ne DÉCIDE rien. `config.json` est le fichier de l'humain : le board
 propose, le formulaire s'ouvre pré-rempli, et seule la validation écrit. Cache de
 20 s, invalidé par changement de l'ensemble des `cwd` non rattachés.
 
+## `sessions_indisponibles` — l'instantané AVEUGLE
+
+    "sessions_indisponibles": null,     on a regardé
+    "sessions_indisponibles": "/…/state : Permission denied",   on n'a pas pu
+
+Tout part de `Board.sessions()`, qui énumère `~/.claude/board/state`. Cette
+énumération peut échouer — droits, montage tombé, dossier supprimé pendant la
+lecture — et c'est **l'échec le plus probable de tout le serveur**.
+
+Elle rendait alors `[]`. Une liste vide est indiscernable d'un poste au repos :
+tout ce qui est bâti au-dessus concluait « aucune conversation ne travaille »,
+`conversations_inconnues: false` et `conversations: 0` compris, et l'onglet
+Chantier masquait la totalité des projets en l'affirmant. Un écran faux et sûr
+de lui, pendant que trois conversations tournaient.
+
+Un échec se propage donc comme **inconnu**, jamais comme **vide** :
+
+    sessions()            lève `EtatsIllisibles` — la seule frontière qui SAIT
+    sessions_connues()    -> None (elle attrapait déjà) -> `conversations: null`
+    instantane()          rend un instantané AVEUGLE, et NE lève pas
+
+`instantane()` ne peut pas laisser remonter : `_flux()` avale toute exception et
+referme la connexion SSE, donc un board figé. L'instantané aveugle garde donc
+ses colonnes — vides, mais présentes, parce qu'un board effacé ressemble à un
+board au repos — publie le motif, et refuse trois choses :
+
+    "total": null      on ne sait pas combien il y en a ; `0` serait le même
+                       mensonge, remis un cran plus haut
+    pas de notification `notifier.evaluate([])` verrait toutes les conversations
+                       disparues d'un coup
+    pas de peinture    `peindre([])` rendrait leur fond d'origine à des panes
+                       bien vivants
+
+`dernieres_sessions` reste à `None` : c'est ce `None` qui devient le
+`conversations: null` de l'onglet Chantier. La panne est journalisée sur stderr
+au plus une fois par minute (`serveur.plainte`) — la boucle SSE repasse ici
+chaque seconde.
+
 ## L'objet ARBRE — produit par `chantier.py`, consommé par l'onglet Chantier
 
 Deuxième structure que le board connaît, après l'SESSION. Servie par
