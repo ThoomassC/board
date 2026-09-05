@@ -298,6 +298,7 @@ Un arbre de travail = un dossier portant un `.git` sous une racine de
       "degrade": null,
       "age_s": 0, "now": 1787825169,
       "groupes": [ {"project":"PROJET_A", "accent":"#4EC9A0", "count":10,
+                    "conversations": 2,     conversations du projet, ou null
                     "depots":[ {"repo":"PROJET_A_backend", "count":6,
                                 "arbres":[ ... ]} ]} ]
     }
@@ -387,6 +388,129 @@ Si ce lot est absent ou périmé, `sessions` vaut `None`, ce qui signifie **« o
 sait pas »** et jamais « aucune ». Aucun arbre ne peut alors être marqué
 `en_cours`, et le drapeau le dit à l'écran. Étiqueter en silence `reserve` un
 arbre où une conversation travaille serait faux, pas dégradé.
+
+Ce drapeau décrit **le relevé**, pas l'appel : voir le tableau des portées plus
+bas, qui est ce qui empêche de le confondre avec `conversations`.
+
+### `conversations` — combien de conversations vivantes par projet
+
+Chaque groupe porte `conversations` : le nombre de conversations vivantes
+rattachées à ce projet. Il existe pour l'onglet, qui replie les projets sans
+conversation en cours ; il n'existe pas pour être joli.
+
+Le champ s'appelait `convs`, et ce nom était un **piège de collision** : les
+groupes de `/api/historique` portent eux aussi un `convs`, mais c'est une LISTE
+de conversations. Même nom de collection (`groupes`), même nom de propriété,
+deux types — et `0 || []` coerce en silence, donc la confusion ne produit aucune
+erreur, juste un écran faux. Le nom complet lève l'ambiguïté ; il fait en outre
+la paire avec `conversations_inconnues`, sur la même charge utile.
+
+**`null` veut dire INCONNU, pas zéro.** `0` est une information sûre : le projet
+n'a aucune conversation ouverte. Le client ne masque un projet que sur
+`conversations === 0`, et **jamais** sur `null` : masquer sur l'inconnu ferait
+disparaître de l'écran des projets où du travail tourne.
+
+Cet invariant ne tient que parce qu'il est tenu **jusqu'en amont** :
+`serveur.sessions()` LÈVE (`EtatsIllisibles`) quand le dossier d'états ne peut
+pas être énuméré, au lieu de rendre une liste vide. Un `return []` à cet
+endroit-là contournait tout ce qui est écrit ici — dossier illisible pendant que
+trois conversations tournent, et la réponse était `conversations: 0` partout,
+`conversations_inconnues: false`, écran vide et sûr de lui. Voir
+« `sessions_indisponibles` » dans la section instantané.
+
+#### `conversations` et `conversations_inconnues` n'ont pas la même portée
+
+C'est **la** confusion à ne pas refaire : les deux champs ne répondent pas à la
+même question, et ne coïncident que sur le chemin frais.
+
+| champ | portée | question |
+|---|---|---|
+| `conversations_inconnues` | **le relevé** | les états d'arbres ont-ils été calculés sans instantané ? |
+| `conversations` | **l'appel** | combien de conversations pour cet appelant-ci ? |
+
+Conséquence concrète, sur un cache-hit avec `sessions=None` (la sonde de
+pastille du board) : `conversations` vaut `null` — cet appelant n'a rien fourni
+à compter — mais `conversations_inconnues` reste `false`, parce que le relevé
+servi a moins de 30 s et a bien été calculé avec un instantané réel (le cache
+refuse les relevés dégradés). Ses arbres `en_cours` sont justes ; les nier
+afficherait « les arbres portant une conversation vivante ne sont pas
+distingués » alors qu'ils l'étaient parfaitement.
+
+**La règle de rattachement est celle de la RACINE DE PROJET, pas celle de
+`conv`.** `conv` rattache une conversation à un arbre par égalité exacte des
+chemins ; `conversations` compte par préfixe de `projects[].root` — la même
+règle que `project` sur l'arbre et que le serveur partout ailleurs
+(`chantier._projet_de`). Les deux ne coïncident pas, et c'est voulu : une
+conversation ouverte dans `.../board/server` n'occupe aucun arbre, n'apparaît
+dans le `conv` d'aucun d'eux, et compte pourtant dans le `conversations` du
+projet. Sommer les `conv` des arbres donnerait un nombre plus petit, sans que
+rien ne le signale.
+
+**`conversations` n'entre JAMAIS dans le cache.** C'est une valeur de réponse,
+pas une valeur mémorisée : le relevé mémorisé est partagé par tous les
+appelants, et le comptage, lui, appartient à un seul. `scan()` le dérive au
+retour, sur ses deux chemins — le froid comme celui du cache. Ce que le cache ne
+contient pas ne peut pas être servi périmé, et `chantier.dernier()` (le bandeau,
+une fois par seconde) n'a donc rien à en retirer.
+
+Ces sept propriétés sont figées dans **`tests/test_chantier.py`**
+(`python3 -m unittest discover -s tests`), y compris le cas du cache-hit sans
+instantané, que l'affichage ne montre jamais.
+
+#### `?force=1` — ce qu'il garantit, et son dédoublonnage
+
+`force` court-circuite le TTL de 30 s. Il ne promet pas « refaire le travail »,
+il promet **« ne pas te servir un relevé d'avant l'événement »** : le board ne
+l'emploie que lorsque l'ENSEMBLE des conversations vivantes a changé, seule
+chose qui puisse déplacer un projet d'un côté ou de l'autre du filtre.
+
+Un balayage forcé coûte, mesuré sur ce poste (18 arbres), **149-164 ms de mur,
+81 processus git, 700-816 ms de CPU**. Sans dédoublonnage, trois onglets ouverts
+payaient ce prix trois fois pour le même événement : **349 ms, 243 processus,
+2 699 ms de CPU**. Trois garde-fous, et il en fallait trois :
+
+    signature             le relevé mémorisé n'est resservi à un `force` que
+                          s'il a vu le MÊME lot de sessions — l'ensemble trié
+                          des couples `(normpath(cwd), sid)`. C'est la condition
+                          exacte : à signature égale, un rebalayage rendrait les
+                          mêmes états d'arbres, les mêmes occupants, les mêmes
+                          motifs de rétention.
+    FENETRE_FORCE = 2 s   et il doit dater de moins de 2 s. Les états d'arbres ne
+                          dépendent pas que des conversations — un `git status`,
+                          une PR, un commit poussé les changent aussi ; sur la
+                          seule signature, un lot de sessions stable dix minutes
+                          rendrait tout `force` inopérant. 2 s couvre la seconde
+                          pleine sur laquelle les onglets se répartissent (chacun
+                          a son propre flux SSE, donc sa propre phase) plus la
+                          durée d'un balayage.
+    coalescence           un `force` qui arrive pendant qu'un balayage tourne
+                          ATTEND son résultat au lieu d'en lancer un second. La
+                          fenêtre seule ne couvre que les appels postérieurs à
+                          la fin du premier balayage ; le cas mesuré est fait
+                          d'appels qui se recouvrent.
+
+**Ce que la signature retient, et ce qu'elle ignore.** `_balayer` ne fait qu'une
+chose des sessions : il les indexe par `normpath(cwd)` et accroche à chaque arbre
+celles dont le chemin coïncide. Le `cwd` décide donc de l'arbre occupé, le `sid`
+distingue deux conversations dans le même arbre — un nombre qui se lit à l'écran
+(« +1 », « 2 conversations y travaillent »). `state`, `title`, `glyphe`,
+`ctx_pct` et `since` voyagent jusqu'au relevé mais ne déplacent aucun arbre, et
+changent chaque seconde : les inclure ferait rebalayer sur un pourcentage de
+contexte qui monte. C'est la même coupe que `majVeilleChantier` côté board pour
+décider quand forcer, et les deux doivent rester d'accord.
+
+**`sessions=null` sur un `force`** ne rebalaie pas. Un appelant qui ne sait pas
+quelles conversations tournent ne peut pas rapprocher le relevé de son événement,
+seulement l'en éloigner : le rebalayage produirait un relevé où AUCUN arbre n'est
+occupé — moins vrai que celui du cache — et ne serait même pas mémorisé. On sert
+le cache, avec `conversations: null` et `conversations_inconnues: false`, qui
+disent exactement ce qui est su et par qui. Même doctrine que l'instantané
+aveugle du serveur : une ignorance ne déclenche pas d'effet visible.
+
+Vérifié : 3 appels forcés simultanés → **1 balayage, 161 ms**, et chacun repart
+avec SON `conversations`. 8 `force` de même signature → **1 balayage, 81
+processus git, 164 ms** — le prix d'un seul ; les mêmes 8 à signatures distinctes
+→ **8 balayages, 648 processus, 1 213 ms**.
 
 ### Puis-je retirer cet arbre de travail ? — `liberable`, `terminee`, `retenu`
 
