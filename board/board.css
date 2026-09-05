@@ -466,19 +466,58 @@ body{
    qu'un croissant de lune ne disait pas : que ça a deux positions.
 
    Aucune ligne de JS : `data-theme` est déjà posé sur la racine par poseTheme,
-   il pilote directement la position du curseur. */
+   il pilote directement la position du curseur.
+
+   ── LA GÉOMÉTRIE EST ICI, L'ÉTAT EST PARAMÈTRE ───────────────────────────────
+   Le second commutateur du produit — « avec conversation », onglet-chantier.css —
+   avait dû RECOPIER ces huit déclarations pour n'en changer qu'une : la position
+   du curseur, que `:root[data-theme="sombre"]` liait au thème de la page. Huit
+   lignes dupliquées pour une, protégées par la promesse de rester « identiques
+   au millimètre » — promesse que le premier qui retouche cette règle-ci
+   casserait, sans qu'aucun test ne s'en aperçoive.
+
+   Les quatre custom properties ci-dessous libèrent ce qui varie — position,
+   fond, pouce, contour — et rien d'autre. `.bascule` redevient réutilisable :
+   qui veut un commutateur prend cette classe et repose les quatre variables sur
+   l'état de SON contrôle, sans rien recopier et sans rien promettre. Les valeurs
+   par défaut sont exactement le dessin d'avant. Les propriétés se posent sur le
+   rail (ou plus haut) : `::after` en hérite, comme tout pseudo-élément.
+
+   LE CONTOUR N'EST PAS UN ORNEMENT, c'est le correctif de contraste que les deux
+   commutateurs partagent désormais. La bascule de thème repose sur `.chrome`,
+   dont le fond est --panel malgré son nom — vérifié dans le navigateur, pas
+   déduit du nom de la classe. Sur ce fond, le rail --line ne fait que 1,31:1 en
+   sombre et 1,17:1 en clair : ce contrôle n'avait AUCUNE forme perceptible
+   (WCAG 1.4.11, seuil 3:1), et son état ne tient qu'à la POSITION d'un point de
+   9 px dans un rail qu'on ne voyait pas. Le contour --t3 porte cette forme à
+   5,42 (sombre) et 5,07 (clair) — mêmes chiffres que pour l'interrupteur du
+   Chantier, qui repose sur le même pigment de fond. Le curseur --t2 sur --line
+   vaut déjà 6,28 / 6,29 : il ne bouge pas.
+
+   Conséquence du `transition:box-shadow` : un changement de thème fait glisser
+   la couleur du contour en 180 ms, comme il fait déjà glisser le curseur. C'est
+   voulu, et c'est neutralisé par `prefers-reduced-motion` comme le reste. */
 .bascule .rail{
-  position:relative; display:block; width:20px; height:11px;
-  border-radius:var(--r-jeton); background:var(--line);
+  position:relative; display:block; flex:0 0 auto; width:20px; height:11px;
+  border-radius:var(--r-jeton);
+  background:var(--rail-fond,var(--line));
+  box-shadow:0 0 0 1px var(--rail-contour,var(--t3));
+  transition:box-shadow .18s ease-out;
 }
 .bascule .rail::after{
-  content:""; position:absolute; top:1px; left:1px;
-  width:9px; height:9px; border-radius:50%; background:currentColor;
+  content:""; position:absolute; top:1px; left:var(--rail-pos,1px);
+  width:9px; height:9px; border-radius:50%;
+  background:var(--rail-pouce,currentColor);
   transition:left .18s ease-out;
 }
-:root[data-theme="sombre"] .bascule .rail::after{left:10px}
+/* Le sélecteur est `.theme.bascule` et non `.bascule` : depuis que la classe est
+   réutilisable, une règle générique liée au thème de la PAGE fuirait sur tout
+   commutateur qui n'a rien à voir avec le thème — et poserait son curseur à
+   droite en sombre, ce qui est exactement le piège qui avait fait recopier cette
+   feuille au lieu de la réutiliser. Seule la bascule de thème lit `data-theme`. */
+:root[data-theme="sombre"] .theme.bascule{--rail-pos:10px}
 @media (prefers-reduced-motion:reduce){
-  .bascule .rail::after{transition:none}
+  .bascule .rail,.bascule .rail::after{transition:none}
 }
 
 /* ═════════════════ adopter un projet détecté ═════════════════════════════════
