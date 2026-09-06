@@ -5,3 +5,10 @@ state/
 __pycache__/
 *.pyc
 .venv/
+
+# Worktrees d'agent — un checkout jumeau de ce dépôt, à l'intérieur de celui-ci.
+# Même emplacement et même règle que travels_in_world : `<dépôt>/.claude/worktrees/`.
+# Il vit là et pas ailleurs pour que le board rattache ses conversations au projet
+# BOARD : le rattachement se fait par préfixe de racine, et un worktree posé hors
+# de la racine tombait dans le projet de repli « AUTRE ».
+.claude/worktrees/

@@ -82,14 +82,26 @@
    dit plutôt que de laisser croire qu'il montre tout. Encre la plus discrète. */
 .ch-cpt.masque b{color:var(--t3); font-weight:400}
 .ch-cpt.masque{cursor:help}
-/* `.ch-cpt.geste` — le jeton ambre « N masqués demandent un geste » — a été
-   SUPPRIMÉ, et pas pour alléger la barre. Un projet qui porte du travail en
-   péril n'est plus masqué du tout : ce compteur vaudrait zéro par construction
-   (voir la doctrine au-dessus de `chArbreEnPeril`, board.js). Il posait par
-   ailleurs trois problèmes qu'aucune retouche ne réglait : il comptait des
-   ARBRES à côté d'un jeton qui compte des PROJETS, il était le seul jeton
-   entièrement en pigment de la barre pour l'information la moins fréquente, et
-   il n'était ni cliquable ni atteignable au clavier. */
+/* LE SUFFIXE AMBRE, DANS le jeton et non à côté. Depuis le retrait de
+   l'exemption, un projet masqué peut contenir du travail non commité : il faut
+   le dire, sans rendre le second jeton qu'on avait supprimé (il comptait des
+   arbres à côté d'un compte de projets, il était entièrement en pigment, et il
+   n'existait pas au clavier). Ici : même unité que son hôte, l'ambre sur le seul
+   chiffre comme partout ailleurs dans cette barre, et la phrase complète vit
+   dans le `title` et dans `#ch-conv-desc`. `⚠` est déjà employé deux fois dans
+   cet onglet et rendu par les polices de repli — pas un glyphe neuf. */
+.ch-cpt.masque b.peril{color:var(--amber); font-weight:700; margin-left:2px}
+/* `.ch-cpt.geste` — le second jeton ambre « N masqués demandent un geste » —
+   reste SUPPRIMÉ, et il ne doit pas revenir avec le retrait de l'exemption.
+   Il y avait deux raisons de le retirer, et une seule a disparu.
+   Caduque : « il vaudrait zéro par construction » — c'était vrai tant qu'un
+   projet en péril était exempté de masquage ; ça ne l'est plus.
+   Toujours valables, et ce sont elles qui tranchent : il comptait des ARBRES à
+   côté d'un jeton qui compte des PROJETS, il était le seul jeton entièrement en
+   pigment de la barre pour l'information la moins fréquente, et il n'était ni
+   cliquable ni atteignable au clavier. Le suffixe ci-dessus règle les trois :
+   même unité, pigment sur le seul chiffre, substance dans le `title` et dans la
+   description liée à la case. */
 .ch-cpt.lib b{color:var(--t2)}
 .ch-cpt.fini b{color:var(--green)}
 .ch-cpt.en_revue b{color:var(--amber)}
@@ -537,3 +549,8 @@
   .ch-etat{overflow:hidden; width:2.4ch}
   .ch-etat span{display:none}
 }
+
+/* L'aveu de l'état vide. Même ambre et même règle que le suffixe du jeton : c'est
+   le seul texte de l'écran quand tout est masqué, il doit nommer ce qu'on risque
+   de ne pas retrouver. Bloc, pas incise : il se lit après la phrase, pas dedans. */
+.ch-vide b.peril{display:inline-block; margin-top:8px; color:var(--amber); font-weight:600}

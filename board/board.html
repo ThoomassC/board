@@ -245,20 +245,20 @@
       ouverture de page</b> et ne se mémorise nulle part&nbsp;: une préférence
       d'affichage qui survit à la nuit finirait par cacher, un lundi matin, le
       dépôt où l'on a laissé vendredi soir trois fichiers non commités.</p>
-    <p><b>Deux sortes de projets échappent toujours au masquage</b>, et ce ne
-      sont pas des avertissements&nbsp;: ce sont des exceptions. Un projet qui
-      porte du travail <b>non commité</b>, des <b>commits non poussés</b> ou une
-      <b>incohérence</b> reste affiché même si aucune conversation n'y
-      travaille — ces choses-là
-      n'existent que dans leur répertoire, et un écran qui les fait disparaître
-      pour faire propre est un écran qui ment. Un projet dont on <b>ignore</b> le
-      nombre de conversations reste affiché lui aussi&nbsp;: quand l'instantané
-      des conversations manque au moment du relevé, le serveur répond « je ne
-      sais pas » et non « aucune », et on ne range rien sur cette réponse-là.</p>
-    <p>Il ne masque donc jamais en silence, et jamais ce qui compte. La barre
-      porte un compteur <b>projets masqués</b> qui dit combien de projets ne sont
-      pas affichés, avec leurs noms au survol. Éteindre l'interrupteur les
-      remontre tous.</p>
+    <p><b>Une seule sorte de projet échappe au masquage</b>&nbsp;: celui dont on
+      <b>ignore</b> le nombre de conversations. Quand l'instantané des
+      conversations manque au moment du relevé, le serveur répond «&nbsp;je ne
+      sais pas&nbsp;» et non «&nbsp;aucune&nbsp;», et on ne range rien sur cette
+      réponse-là.</p>
+    <p>Un projet sans conversation est masqué <b>même s'il contient du travail
+      non commité</b>. C'est un choix assumé&nbsp;: l'interrupteur fait ce que son
+      libellé annonce, sans exception discrétionnaire. Mais il ne le fait jamais
+      en silence — le compteur <b>projets masqués</b> porte alors un nombre en
+      <b style="color:var(--amber)">⚠ ambre</b> qui compte les projets masqués
+      contenant du travail qu'on peut perdre, et les nomme au survol comme dans
+      la description lue par les lecteurs d'écran. Quand tout est masqué, l'écran
+      vide le répète en toutes lettres. Éteindre l'interrupteur les remontre
+      tous.</p>
     <ul class="etats">
       <li><b>● en cours</b> — une conversation vivante travaille dedans.</li>
       <li><b style="color:var(--amber)">➜ en revue</b> — une PR ouverte porte cette

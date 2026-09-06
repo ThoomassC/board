@@ -1275,27 +1275,33 @@ function chArbreEnPeril(a) {
    un côté serveur, ce n'est pas une notion d'utilisateur. */
 function chPluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
 
-function chTexteMasques(projets, arbres, noms) {
-  return chPluriel(projets, "projet masqué", "projets masqués")
-       + " (" + chPluriel(arbres, "arbre", "arbres") + ") : "
-       + noms.join(", ") + ". Aucune conversation Claude n'y travaille, et rien "
-       + "n'y attend de geste. Éteins « avec conversation » pour les revoir.";
+function chTexteMasques(projets, arbres, noms, etat) {
+  let t = chPluriel(projets, "projet masqué", "projets masqués")
+        + " (" + chPluriel(arbres, "arbre", "arbres") + ") : "
+        + noms.join(", ") + ". Aucune conversation Claude n'y travaille.";
+  /* LE SEUL ENDROIT QUI DÉNONCE CE QU'ON PEUT PERDRE. Depuis le retrait de
+     l'exemption, un projet masqué peut contenir du travail non commité. On le
+     dit ici, on le nomme, et on ne s'en remet pas au seul chiffre ambre du
+     jeton : cette phrase est ce que lit un lecteur d'écran. */
+  if (etat && etat.perils)
+    t += " Parmi eux, " + chPluriel(etat.perils, "contient du travail",
+                                    "contiennent du travail")
+       + " qu'on peut perdre — non commité, non poussé ou incohérent : "
+       + etat.nomsPeril.join(", ") + ".";
+  return t + " Éteins « avec conversation » pour les revoir.";
 }
 
 function chTexteInterrupteur(projets, arbres, noms, etat) {
   let t = "Allumé, n'affiche que les projets où une conversation Claude travaille "
-        + "en ce moment. Deux exceptions, toujours : un projet qui porte du "
-        + "travail non commité, des commits non poussés ou une incohérence reste "
-        + "affiché même sans conversation ; un projet dont on ignore le compte "
-        + "reste affiché aussi, car on ne masque rien sur un relevé incomplet.";
-  if (projets) t += " En ce moment : " + chTexteMasques(projets, arbres, noms);
+        + "en ce moment. Une seule exception : un projet dont on ignore le "
+        + "nombre de conversations reste affiché, car on ne masque rien sur un "
+        + "relevé incomplet. Un projet sans conversation est masqué même s'il "
+        + "contient du travail non commité — le compteur le dit et le nomme.";
+  if (projets) t += " En ce moment : " + chTexteMasques(projets, arbres, noms, etat);
   else t += " En ce moment, aucun projet n'est masqué.";
-  if (etat.exemptes) t += " " + chPluriel(etat.exemptes, "projet reste affiché",
-                                          "projets restent affichés")
-                        + " au titre de la première exception.";
   if (etat.inconnus) t += " " + chPluriel(etat.inconnus, "projet reste affiché",
                                           "projets restent affichés")
-                        + " au titre de la seconde.";
+                        + " au titre de l'exception.";
   return t;
 }
 
@@ -1305,18 +1311,20 @@ function chTexteInterrupteur(projets, arbres, noms, etat) {
    le seul endroit du contrôle où la garantie se perdait : une affirmation
    catégorique sur une donnée absente, et probablement fausse. Elle n'est
    désormais prononcée que lorsqu'elle est DÉMONTRÉE — aucun masqué, aucun
-   exempté, aucun inconnu. Sinon on dit ce qu'on sait, et pourquoi. */
+   inconnu. Sinon on dit ce qu'on sait, et pourquoi. */
 function chRaisonsFiltre(m) {
-  if (!m.projets && !m.exemptes && !m.inconnus)
+  if (!m.projets && !m.inconnus)
     return "aucun projet masqué : une conversation travaille dans chacun d'eux.";
   const bouts = [];
   bouts.push(m.projets ? chPluriel(m.projets, "projet masqué", "projets masqués")
                          + " (" + chPluriel(m.arbres, "arbre", "arbres") + ")"
                        : "aucun projet masqué");
-  if (m.exemptes)
-    bouts.push(chPluriel(m.exemptes, "projet sans conversation reste affiché",
-                         "projets sans conversation restent affichés")
-               + " : du travail y attend un geste");
+  /* Annoncé AVANT le motif « inconnu » : c'est la seule information de cette
+     phrase qui puisse coûter du travail à celui qui l'entend. */
+  if (m.perils)
+    bouts.push("dont " + chPluriel(m.perils, "avec du travail qu'on peut perdre",
+                                   "avec du travail qu'on peut perdre")
+               + " : " + m.nomsPeril.join(", "));
   if (m.inconnus)
     bouts.push(chPluriel(m.inconnus, "projet reste affiché",
                          "projets restent affichés")
@@ -1483,11 +1491,12 @@ function majVeilleChantier(snap) {
   }
 }
 
-// Ce que le dernier rendu a effectivement retiré de l'écran, et POURQUOI il n'a
-// pas retiré le reste. Lu par l'annonce de l'interrupteur, qui doit savoir
-// distinguer « rien à masquer » de « je ne sais pas » et de « j'ai le droit,
-// mais je m'interdis » (l'exemption).
-let chDernierMasque = { projets: 0, arbres: 0, exemptes: 0, inconnus: 0 };
+// Ce que le dernier rendu a effectivement retiré de l'écran, et ce que ce retrait
+// emporte avec lui. Lu par l'annonce de l'interrupteur, qui doit savoir distinguer
+// « rien à masquer » de « je ne sais pas », et dire lesquels des masqués
+// contiennent du travail qu'on peut perdre.
+let chDernierMasque = { projets: 0, arbres: 0, perils: 0, nomsPeril: [],
+                        inconnus: 0 };
 
 function rendChantier(d) {
   const zone = $("#chantier");
@@ -1540,22 +1549,35 @@ function rendChantier(d) {
            c'est-à-dire une ignorance, c'est-à-dire zéro projet masqué : la
            dégradation va dans le sens sûr.
 
-       (2) AUCUN ARBRE DU GROUPE N'EST EN PÉRIL — l'exemption, dont la doctrine
-           complète est au-dessus de `chArbreEnPeril`. Ce prédicat-là n'a pas
-           changé d'une virgule ; c'est son USAGE qui a changé : il servait à
-           avertir après coup, il empêche maintenant. */
+       ET RIEN D'AUTRE. Il y avait une seconde condition — « aucun arbre du
+       groupe n'est en péril » — qui exemptait de masquage tout projet portant
+       du travail non commité. Elle a été RETIRÉE sur demande explicite de
+       l'utilisateur, redemandée après l'avoir vue à l'œuvre : elle gardait à
+       l'écran un projet sans aucune conversation, ce qui est exactement ce que
+       cet interrupteur existe pour retirer. Une protection qu'on n'a pas
+       demandée et qui rend le contrôle infidèle à son libellé n'est pas une
+       protection, c'est une surprise.
+
+       CE QUE CE RETRAIT COÛTE, ET COMMENT IL EST PAYÉ. Le filtre redevient
+       capable de masquer un dépôt contenant du travail non commité — le pire
+       cas que nomme la doctrine de `chReplie`. `chArbreEnPeril` n'est donc pas
+       supprimé : il ne décide plus, il DÉNONCE. Le compteur « N projets
+       masqués » porte désormais, en ambre, le nombre de projets masqués qui
+       contiennent du travail qu'on peut perdre, et les nomme. Rien ne disparaît
+       en silence : ce qui disparaît, l'écran le dit. */
     const inconnu = typeof g.conversations !== "number";
-    const enPeril = arbres.some(chArbreEnPeril);
-    const masque = chAvecConv && g.conversations === 0 && !enPeril;
+    const masque = chAvecConv && g.conversations === 0;
     projets.push({ g, depots, arbres, masque, inconnu,
-                   exempte: chAvecConv && g.conversations === 0 && enPeril });
+                   peril: masque && arbres.some(chArbreEnPeril) });
   }
   const montres = projets.filter(p => !p.masque);
   const caches = projets.filter(p => p.masque);
   const arbresMontres = montres.flatMap(p => p.arbres);
   const arbresCaches = caches.flatMap(p => p.arbres);
+  const perils = caches.filter(p => p.peril);
   chDernierMasque = { projets: caches.length, arbres: arbresCaches.length,
-                      exemptes: projets.filter(p => p.exempte).length,
+                      perils: perils.length,
+                      nomsPeril: perils.map(p => p.g.project),
                       inconnus: projets.filter(p => p.inconnu).length };
 
   // `main` et `develop` ne sont pas des chantiers : on n'y travaille pas, on n'y
@@ -1632,10 +1654,18 @@ function rendChantier(d) {
      une alerte.
 
      Ce jeton ne disparaît JAMAIS quand il y a quelque chose à avouer : il est le
-     seul endroit de la barre qui dise que l'écran ne montre pas tout. Le jeton
-     ambre qui l'accompagnait (« N masqués demandent un geste ») a disparu, lui,
-     et pas par allègement : l'exemption structurelle le rend vide par
-     construction — voir la doctrine au-dessus de `chArbreEnPeril`. */
+     seul endroit de la barre qui dise que l'écran ne montre pas tout.
+
+     UN SEUL JETON, ET UN SUFFIXE AMBRE DEDANS. Il y avait eu un second jeton
+     ambre à côté (« N masqués demandent un geste »), supprimé pour trois raisons
+     qui tenaient : il comptait des arbres à côté d'un jeton qui compte des
+     projets, il était le seul entièrement en pigment d'une barre qui déborde, et
+     il n'existait ni au clavier ni au lecteur d'écran. Le retrait de l'exemption
+     rend de nouveau nécessaire de dénoncer le travail masqué — mais pas de
+     ressusciter ce jeton-là. Le nombre entre DANS celui-ci, en ambre sur le seul
+     chiffre, comme tous les autres compteurs de la barre : même unité que son
+     hôte (des projets), une place de moins, et la substance vit dans le `title`
+     et dans la description liée à la case, donc au clavier aussi. */
   const nomsCaches = [...new Set(caches.map(p => p.g.project))];
   if (caches.length) {
     const c = el("span", "ch-cpt masque");
@@ -1643,7 +1673,13 @@ function rendChantier(d) {
     c.append(el("b", null, String(caches.length)),
              el("span", null, caches.length > 1 ? "projets masqués"
                                                 : "projet masqué"));
-    attr(c, "title", chTexteMasques(caches.length, arbresCaches.length, nomsCaches));
+    if (perils.length) {
+      const p = el("b", "peril", "⚠" + perils.length);
+      attr(p, "aria-hidden", "true");   // la phrase du `title` le dit en toutes lettres
+      c.append(p);
+    }
+    attr(c, "title", chTexteMasques(caches.length, arbresCaches.length,
+                                    nomsCaches, chDernierMasque));
     tete.append(c);
   }
 
@@ -1790,18 +1826,26 @@ function rendChantier(d) {
        geste qui le remplit est un écran cassé — et c'est le seul moment où le
        compteur de la barre ne suffit pas, puisqu'il n'y a rien en dessous pour
        lui donner une échelle.
-       Ce cas est devenu RARE depuis l'exemption : il ne reste atteignable que si
-       aucun projet ne porte de conversation ET qu'aucun ne porte de travail en
-       péril — c'est-à-dire quand il n'y a réellement rien à voir. C'est
-       exactement pour ces moments-là qu'on garde un état vide écrit. */
+       Ce cas est FRÉQUENT — c'est tous les soirs, dès qu'aucune conversation ne
+       tourne. L'exemption le rendait rare ; son retrait le remet au premier plan,
+       et c'est le moment de la journée où l'on ouvre cet onglet pour savoir où
+       l'on en était. L'état vide doit donc porter, avant tout le reste, ce que le
+       vide cache de récupérable. */
     const p = el("p", "ch-vide");
     p.append(document.createTextNode(
-               "Aucune conversation Claude ne travaille en ce moment, et rien "
-               + "n'attend de geste. "),
+               "Aucune conversation Claude ne travaille en ce moment. "),
              el("b", null, caches.length
                 + (caches.length > 1 ? " projets sont masqués" : " projet est masqué")),
              document.createTextNode(
                " — éteins « avec conversation » ci-dessus pour les revoir."));
+    if (chDernierMasque.perils) {
+      const a = el("b", "peril");
+      a.textContent = "⚠ " + chPluriel(chDernierMasque.perils,
+                                       "de ces projets contient du travail",
+                                       "de ces projets contiennent du travail")
+                    + " qu'on peut perdre : " + chDernierMasque.nomsPeril.join(", ") + ".";
+      p.append(el("br"), a);
+    }
     zone.append(p);
     return;
   }
