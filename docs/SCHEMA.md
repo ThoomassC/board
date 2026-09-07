@@ -239,6 +239,139 @@ Le serveur ne DÉCIDE rien. `config.json` est le fichier de l'humain : le board
 propose, le formulaire s'ouvre pré-rempli, et seule la validation écrit. Cache de
 20 s, invalidé par changement de l'ensemble des `cwd` non rattachés.
 
+## `sessions_indisponibles` — l'instantané AVEUGLE
+
+    "sessions_indisponibles": null,     on a regardé
+    "sessions_indisponibles": "/…/state : Permission denied",   on n'a pas pu
+
+Tout part de `Board.sessions()`, qui énumère `~/.claude/board/state`. Cette
+énumération peut échouer — droits, montage tombé, dossier supprimé pendant la
+lecture — et c'est **l'échec le plus probable de tout le serveur**.
+
+Elle rendait alors `[]`. Une liste vide est indiscernable d'un poste au repos :
+tout ce qui est bâti au-dessus concluait « aucune conversation ne travaille »,
+`conversations_inconnues: false` et `conversations: 0` compris, et l'onglet
+Chantier masquait la totalité des projets en l'affirmant. Un écran faux et sûr
+de lui, pendant que trois conversations tournaient.
+
+Un échec se propage donc comme **inconnu**, jamais comme **vide** :
+
+    sessions()            lève `EtatsIllisibles` — la seule frontière qui SAIT
+    sessions_connues()    -> None (elle attrapait déjà) -> `conversations: null`
+    instantane()          rend un instantané AVEUGLE, et NE lève pas
+
+`instantane()` ne peut pas laisser remonter : `_flux()` avale toute exception et
+referme la connexion SSE, donc un board figé. L'instantané aveugle garde donc
+ses colonnes — vides, mais présentes, parce qu'un board effacé ressemble à un
+board au repos — publie le motif, et refuse trois choses :
+
+    "total": null      on ne sait pas combien il y en a ; `0` serait le même
+                       mensonge, remis un cran plus haut
+    pas de notification `notifier.evaluate([])` verrait toutes les conversations
+                       disparues d'un coup
+    pas de peinture    `peindre([])` rendrait leur fond d'origine à des panes
+                       bien vivants
+
+`dernieres_sessions` reste à `None` : c'est ce `None` qui devient le
+`conversations: null` de l'onglet Chantier. La panne est journalisée sur stderr
+au plus une fois par minute (`serveur.plainte`) — la boucle SSE repasse ici
+chaque seconde.
+
+## `GET /api/decouverte?autorise=1` — les projets du poste, proposés
+
+`candidats_projets` ci-dessus ne voit que ce que l'historique lui montre : un
+projet non déclaré n'y apparaît que si une conversation y a déjà tourné.
+`decouverte.scan(config, racine=None)` répond à l'autre moitié du besoin — les
+dépôts git présents sur le disque, qu'une conversation les ait visités ou non.
+
+    {
+      "candidats": [
+        {"name": "UI-COMMUNE",        nom deviné par `serveur._nom_devine`
+         "root": "/Users/…/Documents/Projets_Perso/ui-commune",
+         "root_court": "~/Documents/Projets_Perso/ui-commune",
+         "depot": "ui-commune",       basename du dépôt, tel qu'il est sur le disque
+         "dernier_commit_at": 1756900000,   mtime de `.git/HEAD`, ou null
+         "collision": null}           nom déjà déclaré dans config.json, ou null
+      ],
+      "scannes": 412,                 dossiers VISITÉS, pas entrées lues
+      "illisibles": 0,                sautés faute de droits — un ENTIER
+      "duree_ms": 2900,
+      "degrade": null                 null = relevé complet ; sinon, le motif
+    }
+
+Les six clés d'un candidat sont TOUJOURS là, les cinq du relevé aussi. `null` y
+est une affirmation (« aucune collision », « date inconnue », « j'ai tout lu »),
+pas une clé oubliée — même règle que `sessions_indisponibles`.
+
+### Les trois choses qui ne se devinent pas
+
+**`autorise=1` est obligatoire.** Sans lui, la route répond `403` et
+**aucun dossier n'est lu** : le module n'est même pas appelé. Le balayage est la
+seule lecture du serveur qui sorte des projets déclarés, l'utilisateur a demandé
+à en garder la main, et cette main se vérifie côté serveur — une garde côté
+client ne serait qu'une convention, qu'un `curl` ou un onglet resté ouvert sur
+une ancienne version du JS contournerait.
+
+**La découverte n'écrit RIEN.** Ni config.json, ni cache, ni fichier de
+marquage, et elle ne mute pas la `config` qu'on lui passe. Elle PROPOSE ;
+l'adoption est un second geste, humain, et `POST /api/projet` reste le seul
+écrivain de `config.projects`.
+
+**La liste est ordonnée par récence**, et cet ordre est un contrat :
+`dernier_commit_at` décroissant, les dates inconnues en dernier, puis `name`
+croissant à égalité. Ce qu'on a touché récemment se propose en premier — c'est
+ce qui rend la liste utile plutôt qu'alphabétique.
+
+### Ce qu'on ne propose pas, et pourquoi
+
+    · ce qui est déjà couvert par une racine déclarée — la racine elle-même ET
+      tout ce qui vit dessous, une racine pouvant valoir
+      `~/Documents/Projets_Perso` en entier ;
+    · le répertoire personnel lui-même — il porte souvent un `.git` de
+      dotfiles, et « UTILISATEUR » n'est pas un projet ;
+    · tout dossier caché, à quelque profondeur que ce soit, `node_modules`,
+      `~/Library` et `~/.Trash` — sans ces exclusions le balayage remonte
+      `~/.codex/.tmp/…`, `~/.islands-dark-temp` et
+      `~/.local/share/ruby-advisory-db`, les trois faux positifs mesurés ;
+    · ce qui vit DANS un dépôt trouvé — un dépôt arrête la descente, sinon
+      `antomappat` et `antomappat/antomappat-front` seraient proposés tous les
+      deux et l'utilisateur devrait deviner lequel adopter ;
+    · un dossier dont `_nom_devine` ne tire aucun nom recevable — proposer un
+      candidat que le formulaire d'adoption refusera est une impasse.
+
+Les liens symboliques ne sont **jamais** suivis : un lien vers `~` ou vers un
+parent ferait boucler la descente, et un lien vers un dossier déjà balayé le
+proposerait deux fois sous deux chemins.
+
+### Les bornes, et ce qu'elles obligent à dire
+
+Deux bornes, `PROFONDEUR_MAX = 8` et `BUDGET_S = 10`. Mesures sur ce poste :
+`~` complet = 2,9 s pour 16 dépôts ; borné à 6 niveaux = 0,42 s pour 15. La
+profondeur protège d'une arborescence pathologique, le budget d'un disque lent
+ou d'un montage réseau — cas où aucune profondeur ne borne le temps.
+
+Une borne atteinte se DIT dans `degrade` (« balayage interrompu … ») : rendre
+une liste tronquée avec `degrade` à `null` la ferait passer pour exhaustive.
+
+`illisibles` est un entier À CÔTÉ de `degrade` : le client ne doit jamais avoir
+à parser une phrase pour obtenir un compte.
+
+### Un seul balayage à la fois — refusé, pas mis en file
+
+C'est l'opération la plus lente du serveur et elle tourne dans un thread de
+requête. Un appel concurrent est refusé sur-le-champ :
+
+    {"candidats": [], "scannes": 0, "illisibles": 0, "duree_ms": 0,
+     "degrade": "balayage déjà en cours : réessayez dans quelques secondes"}
+
+Le scénario n'est pas le polling — `autorise=1` implique un geste humain — mais
+l'impatience : trois secondes sans retour visuel, et l'utilisateur reclique. Dix
+parcours de `~` en parallèle s'écroulent ensemble, l'I/O disque ne se partageant
+pas. Et à la différence de `chantier.scan`, la découverte ne COALESCE pas
+(attendre le balayage en cours pour resservir son relevé) : le contrat de retour
+est fermé, il n'a pas de champ pour dire l'âge d'un relevé, donc un relevé
+resservi serait indiscernable d'un relevé frais.
+
 ## L'objet ARBRE — produit par `chantier.py`, consommé par l'onglet Chantier
 
 Deuxième structure que le board connaît, après l'SESSION. Servie par
@@ -260,6 +393,7 @@ Un arbre de travail = un dossier portant un `.git` sous une racine de
       "degrade": null,
       "age_s": 0, "now": 1787825169,
       "groupes": [ {"project":"PROJET_A", "accent":"#4EC9A0", "count":10,
+                    "conversations": 2,     conversations du projet, ou null
                     "depots":[ {"repo":"PROJET_A_backend", "count":6,
                                 "arbres":[ ... ]} ]} ]
     }
@@ -349,6 +483,129 @@ Si ce lot est absent ou périmé, `sessions` vaut `None`, ce qui signifie **« o
 sait pas »** et jamais « aucune ». Aucun arbre ne peut alors être marqué
 `en_cours`, et le drapeau le dit à l'écran. Étiqueter en silence `reserve` un
 arbre où une conversation travaille serait faux, pas dégradé.
+
+Ce drapeau décrit **le relevé**, pas l'appel : voir le tableau des portées plus
+bas, qui est ce qui empêche de le confondre avec `conversations`.
+
+### `conversations` — combien de conversations vivantes par projet
+
+Chaque groupe porte `conversations` : le nombre de conversations vivantes
+rattachées à ce projet. Il existe pour l'onglet, qui replie les projets sans
+conversation en cours ; il n'existe pas pour être joli.
+
+Le champ s'appelait `convs`, et ce nom était un **piège de collision** : les
+groupes de `/api/historique` portent eux aussi un `convs`, mais c'est une LISTE
+de conversations. Même nom de collection (`groupes`), même nom de propriété,
+deux types — et `0 || []` coerce en silence, donc la confusion ne produit aucune
+erreur, juste un écran faux. Le nom complet lève l'ambiguïté ; il fait en outre
+la paire avec `conversations_inconnues`, sur la même charge utile.
+
+**`null` veut dire INCONNU, pas zéro.** `0` est une information sûre : le projet
+n'a aucune conversation ouverte. Le client ne masque un projet que sur
+`conversations === 0`, et **jamais** sur `null` : masquer sur l'inconnu ferait
+disparaître de l'écran des projets où du travail tourne.
+
+Cet invariant ne tient que parce qu'il est tenu **jusqu'en amont** :
+`serveur.sessions()` LÈVE (`EtatsIllisibles`) quand le dossier d'états ne peut
+pas être énuméré, au lieu de rendre une liste vide. Un `return []` à cet
+endroit-là contournait tout ce qui est écrit ici — dossier illisible pendant que
+trois conversations tournent, et la réponse était `conversations: 0` partout,
+`conversations_inconnues: false`, écran vide et sûr de lui. Voir
+« `sessions_indisponibles` » dans la section instantané.
+
+#### `conversations` et `conversations_inconnues` n'ont pas la même portée
+
+C'est **la** confusion à ne pas refaire : les deux champs ne répondent pas à la
+même question, et ne coïncident que sur le chemin frais.
+
+| champ | portée | question |
+|---|---|---|
+| `conversations_inconnues` | **le relevé** | les états d'arbres ont-ils été calculés sans instantané ? |
+| `conversations` | **l'appel** | combien de conversations pour cet appelant-ci ? |
+
+Conséquence concrète, sur un cache-hit avec `sessions=None` (la sonde de
+pastille du board) : `conversations` vaut `null` — cet appelant n'a rien fourni
+à compter — mais `conversations_inconnues` reste `false`, parce que le relevé
+servi a moins de 30 s et a bien été calculé avec un instantané réel (le cache
+refuse les relevés dégradés). Ses arbres `en_cours` sont justes ; les nier
+afficherait « les arbres portant une conversation vivante ne sont pas
+distingués » alors qu'ils l'étaient parfaitement.
+
+**La règle de rattachement est celle de la RACINE DE PROJET, pas celle de
+`conv`.** `conv` rattache une conversation à un arbre par égalité exacte des
+chemins ; `conversations` compte par préfixe de `projects[].root` — la même
+règle que `project` sur l'arbre et que le serveur partout ailleurs
+(`chantier._projet_de`). Les deux ne coïncident pas, et c'est voulu : une
+conversation ouverte dans `.../board/server` n'occupe aucun arbre, n'apparaît
+dans le `conv` d'aucun d'eux, et compte pourtant dans le `conversations` du
+projet. Sommer les `conv` des arbres donnerait un nombre plus petit, sans que
+rien ne le signale.
+
+**`conversations` n'entre JAMAIS dans le cache.** C'est une valeur de réponse,
+pas une valeur mémorisée : le relevé mémorisé est partagé par tous les
+appelants, et le comptage, lui, appartient à un seul. `scan()` le dérive au
+retour, sur ses deux chemins — le froid comme celui du cache. Ce que le cache ne
+contient pas ne peut pas être servi périmé, et `chantier.dernier()` (le bandeau,
+une fois par seconde) n'a donc rien à en retirer.
+
+Ces sept propriétés sont figées dans **`tests/test_chantier.py`**
+(`python3 -m unittest discover -s tests`), y compris le cas du cache-hit sans
+instantané, que l'affichage ne montre jamais.
+
+#### `?force=1` — ce qu'il garantit, et son dédoublonnage
+
+`force` court-circuite le TTL de 30 s. Il ne promet pas « refaire le travail »,
+il promet **« ne pas te servir un relevé d'avant l'événement »** : le board ne
+l'emploie que lorsque l'ENSEMBLE des conversations vivantes a changé, seule
+chose qui puisse déplacer un projet d'un côté ou de l'autre du filtre.
+
+Un balayage forcé coûte, mesuré sur ce poste (18 arbres), **149-164 ms de mur,
+81 processus git, 700-816 ms de CPU**. Sans dédoublonnage, trois onglets ouverts
+payaient ce prix trois fois pour le même événement : **349 ms, 243 processus,
+2 699 ms de CPU**. Trois garde-fous, et il en fallait trois :
+
+    signature             le relevé mémorisé n'est resservi à un `force` que
+                          s'il a vu le MÊME lot de sessions — l'ensemble trié
+                          des couples `(normpath(cwd), sid)`. C'est la condition
+                          exacte : à signature égale, un rebalayage rendrait les
+                          mêmes états d'arbres, les mêmes occupants, les mêmes
+                          motifs de rétention.
+    FENETRE_FORCE = 2 s   et il doit dater de moins de 2 s. Les états d'arbres ne
+                          dépendent pas que des conversations — un `git status`,
+                          une PR, un commit poussé les changent aussi ; sur la
+                          seule signature, un lot de sessions stable dix minutes
+                          rendrait tout `force` inopérant. 2 s couvre la seconde
+                          pleine sur laquelle les onglets se répartissent (chacun
+                          a son propre flux SSE, donc sa propre phase) plus la
+                          durée d'un balayage.
+    coalescence           un `force` qui arrive pendant qu'un balayage tourne
+                          ATTEND son résultat au lieu d'en lancer un second. La
+                          fenêtre seule ne couvre que les appels postérieurs à
+                          la fin du premier balayage ; le cas mesuré est fait
+                          d'appels qui se recouvrent.
+
+**Ce que la signature retient, et ce qu'elle ignore.** `_balayer` ne fait qu'une
+chose des sessions : il les indexe par `normpath(cwd)` et accroche à chaque arbre
+celles dont le chemin coïncide. Le `cwd` décide donc de l'arbre occupé, le `sid`
+distingue deux conversations dans le même arbre — un nombre qui se lit à l'écran
+(« +1 », « 2 conversations y travaillent »). `state`, `title`, `glyphe`,
+`ctx_pct` et `since` voyagent jusqu'au relevé mais ne déplacent aucun arbre, et
+changent chaque seconde : les inclure ferait rebalayer sur un pourcentage de
+contexte qui monte. C'est la même coupe que `majVeilleChantier` côté board pour
+décider quand forcer, et les deux doivent rester d'accord.
+
+**`sessions=null` sur un `force`** ne rebalaie pas. Un appelant qui ne sait pas
+quelles conversations tournent ne peut pas rapprocher le relevé de son événement,
+seulement l'en éloigner : le rebalayage produirait un relevé où AUCUN arbre n'est
+occupé — moins vrai que celui du cache — et ne serait même pas mémorisé. On sert
+le cache, avec `conversations: null` et `conversations_inconnues: false`, qui
+disent exactement ce qui est su et par qui. Même doctrine que l'instantané
+aveugle du serveur : une ignorance ne déclenche pas d'effet visible.
+
+Vérifié : 3 appels forcés simultanés → **1 balayage, 161 ms**, et chacun repart
+avec SON `conversations`. 8 `force` de même signature → **1 balayage, 81
+processus git, 164 ms** — le prix d'un seul ; les mêmes 8 à signatures distinctes
+→ **8 balayages, 648 processus, 1 213 ms**.
 
 ### Puis-je retirer cet arbre de travail ? — `liberable`, `terminee`, `retenu`
 

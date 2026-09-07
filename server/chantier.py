@@ -43,6 +43,60 @@ TTL = 30.0            # les données sont locales et rapides : un cache court su
 TIMEOUT = 3.0         # un `git status` sur un montage lent ne doit pas tout figer
 PARALLELE = 8         # 4 questions git par arbre, 29 arbres : on les mène de front
 
+# DÉDOUBLONNAGE DES BALAYAGES FORCÉS — une fenêtre ET une signature.
+#
+# Ce que `force` doit garantir (cf. board.js, « POURQUOI `force` ») : que les
+# ÉTATS D'ARBRES du relevé tiennent compte du changement de conversations qui
+# vient d'être observé. Rien de plus. Ce n'est pas « refaire le travail », c'est
+# « ne pas me servir un relevé d'avant l'événement ».
+#
+# Ce qu'il coûte, mesuré sur ce poste (18 arbres) : 155-164 ms de mur, 81
+# processus git, 816 ms de CPU par balayage forcé. Avec 3 onglets du board
+# ouverts, UNE conversation qui démarre a été mesurée à 349 ms, 243 processus,
+# 2 699 ms de CPU — le même relevé, calculé trois fois.
+#
+# Un `force` est donc resservi depuis le relevé mémorisé À DEUX CONDITIONS, et
+# il en faut deux parce qu'elles ne répondent pas à la même question.
+#
+#   ① LA SIGNATURE (`_signature_sessions`) — « ce relevé a-t-il vu MON
+#     événement ? » C'est la condition exacte : le relevé mémorisé a été calculé
+#     sur le même lot de sessions que celui de cet appel, donc un rebalayage ne
+#     changerait aucun état d'arbre. Elle ne coûte rien au cas mesuré : N
+#     onglets qui réagissent au même changement présentent par construction la
+#     même signature. Elle rattrape ce que la fenêtre seule ratait — deux
+#     changements DISTINCTS en moins de deux secondes, où le second appelant se
+#     voyait resservir un relevé antérieur à son propre événement.
+#
+#   ② LA FENÊTRE (`FENETRE_FORCE`) — « ce relevé est-il encore assez frais ? »
+#     Nécessaire parce que les états d'arbres ne dépendent pas QUE des
+#     conversations : un `git status`, une PR ouverte, un commit poussé les
+#     changent sans que l'instantané bouge. Sur la seule signature, un lot de
+#     sessions stable dix minutes rendrait tout `force` définitivement
+#     inopérant. La fenêtre borne les rafales à signature identique, elle ne les
+#     décide plus.
+#
+# Pourquoi 2 s : les onglets ne réagissent pas en même temps. Chacun tient son
+# propre flux SSE, dont la phase dépend de l'heure d'ouverture de la page ; le
+# même changement de conversations est donc détecté sur une plage d'UNE seconde
+# pleine (la période du flux), plus la durée d'un balayage (~0,16 s). Une
+# fenêtre plus courte laisserait passer les onglets de fin de plage — c'est-à-
+# dire raterait exactement le cas mesuré. Plus longue, elle ne recouvre plus
+# d'événements distincts depuis que ① les départage, mais elle resservirait des
+# états d'arbres vieillis pour des raisons étrangères aux conversations.
+#
+# Pourquoi pas le TTL de 30 s : le TTL répond à « ce relevé est-il encore
+# utile ? », la fenêtre à « est-il assez frais pour un appelant qui a vu quelque
+# chose bouger ? ». Deux questions, deux durées. Confondre les deux, c'est un
+# `force` qui ne force jamais.
+FENETRE_FORCE = 2.0
+
+# Un balayage qui tourne déjà est attendu plutôt que doublé (cf. `scan`). Une
+# borne, pour qu'un balayage bloqué sur un montage mort — `git status` a son
+# propre TIMEOUT de 3 s, mais rien ne garantit qu'il soit le seul en cause — ne
+# fige pas indéfiniment un appelant qui pourrait, lui, réussir.
+ATTENTE_BALAYAGE = 1.0
+ATTENTES_MAX = 3
+
 BRANCHES_SOCLE = {"main", "master", "develop", "dev"}
 BASES_CANDIDATES = ("origin/develop", "origin/main", "origin/master")
 
@@ -60,8 +114,15 @@ LIBELLE_PR = {"conflit": "CONFLIT", "a_corriger": "À CORRIGER", "a_relire": "À
               "dort": "DORT", "prete": "PRÊTE", "en_attente": "EN ATTENTE",
               "brouillon": "BROUILLON"}
 
-_CACHE = {"at": 0.0, "data": None}
-_VERROU = threading.Lock()
+# `data` ne contient JAMAIS `conversations` : voir `_compter_conversations`.
+# `signature` est celle du lot de sessions qui a produit `data` — jamais None
+# quand `data` ne l'est pas, puisque le cache refuse les relevés dégradés.
+_CACHE = {"at": 0.0, "data": None, "signature": None}
+# Une Condition et non un Lock : elle sert aussi de signal de fin de balayage,
+# pour que deux balayages simultanés n'en fassent qu'un (cf. `scan`). Elle
+# s'utilise comme un verrou partout ailleurs, `with _VERROU:` compris.
+_VERROU = threading.Condition()
+_EN_COURS = {"balayages": 0}
 
 
 # ------------------------------------------------------------------ git brut
@@ -501,6 +562,141 @@ def _habiller(arbres, config, maintenant):
     return groupes
 
 
+def _compter_conversations(groupes, config, sessions):
+    """Rend une COPIE des groupes, chacun portant `conversations`.
+
+    `conversations` = combien de conversations vivantes travaillent dans ce
+    projet, ou None quand l'appelant n'a pas fourni d'instantané. C'est une
+    valeur DE RÉPONSE, dérivée au retour de `scan()` sur ses deux chemins ; elle
+    n'entre jamais dans le relevé mémorisé, qui appartient à tout le monde.
+    Quatre choses se jouent ici, et aucune ne se redevine à la relecture.
+
+    1. LE RATTACHEMENT N'EST PAS CELUI DE `a["conv"]`. `_balayer` rattache une
+       conversation à un arbre par égalité EXACTE des chemins : une conversation
+       ouverte dans `.../board/server` n'occupe aucun arbre et n'apparaît donc
+       dans le `conv` d'aucun d'eux — elle appartient pourtant bien au projet.
+       `conversations` compte par RACINE DE PROJET, avec `_projet_de`, la règle
+       que le serveur et `_habiller` appliquent déjà. Un
+       `sum(len(a["conv"] or []) for ...)` paraîtrait équivalent et
+       sous-compterait en silence tout travail mené dans un sous-dossier.
+
+    2. None N'EST PAS ZÉRO. `sessions is None` dit « on ne sait pas », jamais
+       « aucune ». Le client ne masque un projet que sur `conversations === 0`
+       et jamais sur `null` : lui servir 0 au lieu de None ferait disparaître de
+       l'écran des projets où trois conversations tournent. Cet invariant se
+       tient jusqu'en amont : `serveur.sessions()` LÈVE quand le dossier d'états
+       est illisible au lieu de rendre une liste vide, sans quoi tout ce
+       raisonnement était contourné avant d'arriver ici.
+
+    3. `conversations` N'EST PAS `conversations_inconnues`. Le premier décrit
+       l'APPEL (cet appelant-ci a-t-il fourni un instantané ?), le second décrit
+       le RELEVÉ (ses états d'arbres ont-ils été calculés sans instantané ?).
+       Les deux ne coïncident que sur le chemin frais. Un appel `sessions=None`
+       servi par le cache reçoit donc `conversations: null` et
+       `conversations_inconnues: false` — et c'est juste : le relevé, lui, a
+       bien vu un instantané.
+
+    4. AUCUN GROUPE N'EST MUTÉ EN PLACE. Les groupes reçus sont ceux du relevé
+       mémorisé, partagé entre tous les appelants : y écrire corromprait le
+       cache pour le suivant. On rend des dicts neufs. La copie est
+       volontairement de SURFACE : seul le premier niveau change, `depots` et
+       les arbres qu'il contient ne sont ni lus ni touchés, les partager coûte
+       zéro et évite de recopier 29 arbres à chaque appel.
+
+    Une conversation `dead` ne compte pas : le serveur les écarte déjà en amont
+    (`serveur.py`, construction de l'instantané), mais `chantier` reçoit une
+    liste qu'il ne fabrique pas — il ne suppose pas ce filtrage, il le refait.
+    Une entrée sans `cwd` est ignorée plutôt que rattachée au projet de repli :
+    on ne sait pas où elle travaille, l'inventer gonflerait « AUTRE ».
+    """
+    if sessions is None:
+        return [dict(g, conversations=None) for g in groupes]
+    par_projet = {}
+    for e in sessions:
+        if not isinstance(e, dict) or e.get("state") == "dead":
+            continue
+        cwd = e.get("cwd")
+        if not cwd:
+            continue
+        nom, _accent = _projet_de(cwd, config)
+        par_projet[nom] = par_projet.get(nom, 0) + 1
+    # `get(..., 0)` et non `get(...)` : un projet dont aucun arbre n'est occupé
+    # a bien ZÉRO conversation, ce qui est une information sûre — pas un trou.
+    return [dict(g, conversations=par_projet.get(g.get("project"), 0))
+            for g in groupes]
+
+
+def _signature_sessions(sessions):
+    """Ce dont les ÉTATS D'ARBRES dépendent dans l'instantané, et rien d'autre.
+
+    Deux appels de même signature produiraient, arbre par arbre, le même `etat`,
+    le même `liberable`, le même `retenu`, la même `alerte` et les mêmes
+    `compteurs`. C'est la condition qu'un `force` doit vérifier avant d'accepter
+    le relevé mémorisé de quelqu'un d'autre.
+
+    CE QU'ELLE RETIENT, et pourquoi c'est exactement ça. `_balayer` ne fait
+    qu'UNE chose de `sessions` : il indexe les entrées par `normpath(cwd)` et
+    accroche à chaque arbre celles dont le chemin coïncide. Le `cwd` normalisé
+    décide donc de l'arbre occupé, et le `sid` distingue deux conversations dans
+    le même arbre — un nombre qui se lit à l'écran (« 2 conversations y
+    travaillent ») et qu'un ensemble de cwd seuls écraserait.
+
+    CE QU'ELLE IGNORE : `state`, `title`, `glyphe`, `ctx_pct`, `since`. Ils
+    voyagent bien jusqu'au relevé, dans `a["conv"]`, mais ils ne déplacent aucun
+    arbre — et ils changent à chaque seconde. Les inclure ferait rebalayer sur
+    un pourcentage de contexte qui monte, c'est-à-dire sur presque tous les
+    `force` d'une rafale : le dédoublonnage serait mort de sa précision. C'est
+    la même coupe que fait `majVeilleChantier` côté board pour décider quand
+    forcer, et les deux doivent rester d'accord.
+    (Si `_balayer` venait un jour à écarter les entrées `dead` — il ne le fait
+    pas, il les traite comme des occupants —, `state` devrait entrer ici.)
+
+    Un TUPLE TRIÉ plutôt qu'un `set` : indifférent à l'ordre de la liste, qui
+    dépend du tri d'affichage du serveur et non des arbres, mais sensible à la
+    multiplicité, qu'un ensemble effacerait. Les entrées sans `cwd` sont
+    ignorées, comme `_balayer` les ignore : on ne sait pas où elles travaillent,
+    les compter ferait rebalayer pour un changement qui ne touche aucun arbre.
+
+    `None` (« on ne sait pas quelles conversations tournent ») n'a pas de
+    signature — voir `_meme_instantane`, qui décide de ce cas-là.
+    """
+    if sessions is None:
+        return None
+    paires = []
+    for e in sessions:
+        cwd = e.get("cwd") if isinstance(e, dict) else None
+        if cwd:
+            paires.append((os.path.normpath(cwd), str(e.get("sid") or "")))
+    return tuple(sorted(paires))
+
+
+def _meme_instantane(signature):
+    """Le relevé mémorisé a-t-il vu le même lot de sessions ?
+
+    À appeler sous `_VERROU`.
+
+    LE CAS `None` — c'est-à-dire « l'appelant ne sait pas quelles conversations
+    tournent » — se tranche ici, et il ne se tranche pas par égalité. Le rendre
+    égal à la signature vide le confondrait avec « aucune session » et ferait
+    rebalayer dès que le cache en connaît une ; en faire une valeur qui ne
+    s'égale à rien ferait rebalayer TOUJOURS. Or dans les deux cas ce
+    rebalayage produirait un relevé où AUCUN arbre n'est occupé — strictement
+    moins vrai que celui du cache, calculé lui avec un instantané réel — et qui
+    ne serait même pas mémorisé, `_balayer_et_memoriser` refusant les relevés
+    dégradés. On paierait 160 ms et 81 processus git pour régresser.
+
+    Un appelant qui ne sait rien n'a rien à apporter au relevé : il ne peut pas
+    le rapprocher de son événement, seulement l'en éloigner. On lui sert donc le
+    cache, avec le `conversations: null` et le `conversations_inconnues: false`
+    qui disent exactement ce qui est su et par qui (cf. `_compter_conversations`,
+    point 3). C'est la même doctrine que `serveur._instantane_aveugle` : une
+    ignorance ne déclenche pas d'effet visible.
+    """
+    if signature is None:
+        return True
+    return signature == _CACHE["signature"]
+
+
 def dernier():
     """Le dernier relevé SI le cache est frais, sinon None. NE BALAIE JAMAIS.
 
@@ -509,6 +705,11 @@ def dernier():
     tous les arbres dès que le cache expire, et la boucle SSE n'a pas à payer
     ça. None veut dire « on ne sait pas encore », et le bandeau se contente
     alors de ce qu'il sait — il ne prétend rien.
+
+    Rien à retirer du relevé mémorisé : `conversations` n'y entre jamais (cf.
+    `scan`), donc `dernier()` ne peut pas le servir périmé. C'était douze lignes
+    de commentaire et un filtrage de cinq dicts par seconde pour défaire un
+    travail qu'on venait de faire.
     """
     with _VERROU:
         if _CACHE["data"] is None or (time.time() - _CACHE["at"]) >= TTL:
@@ -518,26 +719,101 @@ def dernier():
         return d
 
 
+def _servir_du_cache(config, sessions, maintenant):
+    """Le relevé mémorisé, habillé pour CET appelant. À appeler sous `_VERROU`.
+
+    `conversations` est dérivé ici, jamais lu : le cache ne le porte pas.
+    `conversations_inconnues`, lui, vient du relevé tel quel — c'est une
+    propriété du relevé, pas de l'appel (cf. `_compter_conversations`, point 3),
+    et le cache ne mémorise que des relevés complets.
+    """
+    d = dict(_CACHE["data"])
+    d["age_s"] = int(time.time() - _CACHE["at"])
+    d["now"] = maintenant
+    d["groupes"] = _compter_conversations(d.get("groupes") or [], config, sessions)
+    return d
+
+
 def scan(config, sessions=None, us_de=None, force=False):
     """L'inventaire complet, servi depuis un cache de 30 s.
 
-    `sessions` : la liste d'sessions du dernier instantané. `None` signifie « on ne
-    sait pas » et NON « aucune » : dans ce cas aucun arbre ne peut être marqué
-    `en_cours`, ce que le drapeau `conversations_inconnues` dit à l'écran.
-    Étiqueter en silence un arbre occupé comme `réserve` serait faux, pas dégradé.
+    `sessions` : la liste des sessions du dernier instantané. `None` signifie
+    « on ne sait pas » et NON « aucune » : dans ce cas aucun arbre ne peut être
+    marqué `en_cours`, ce que le drapeau `conversations_inconnues` dit à
+    l'écran. Étiqueter en silence un arbre occupé comme `réserve` serait faux,
+    pas dégradé. Le `conversations` de chaque groupe porte la même distinction :
+    un entier, ou None quand on ne sait pas. Il est DÉRIVÉ à chaque appel, sur
+    les deux chemins, et n'entre jamais dans le cache.
+
+    `force` court-circuite le TTL. Il n'est resservi depuis le relevé mémorisé
+    que si celui-ci est récent ET a vu le même lot de sessions : voir
+    `FENETRE_FORCE` et `_signature_sessions`.
 
     `us_de` : la règle d'extraction du n° d'US, injectée par le serveur pour
     qu'il n'en existe qu'une seule implémentation (cf. docs/SCHEMA.md).
     """
     maintenant = int(time.time())
+    # Un `force` accepte un relevé de moins de 2 s, un appel normal de moins de
+    # 30 s. Une seule expression, pour qu'il n'y ait qu'un endroit où se tromper.
+    fenetre = FENETRE_FORCE if force else TTL
+    # Calculée une fois, hors du verrou et hors de la boucle d'attente : elle ne
+    # dépend que de l'argument.
+    signature = _signature_sessions(sessions)
     with _VERROU:
-        frais = _CACHE["data"] is not None and (time.time() - _CACHE["at"]) < TTL
-        if frais and not force:
-            d = dict(_CACHE["data"])
-            d["age_s"] = int(time.time() - _CACHE["at"])
-            d["now"] = maintenant
-            return d
+        attentes = 0
+        while True:
+            # LA SIGNATURE NE CONDITIONNE QUE LE CHEMIN `force`. Un appel normal
+            # sert le relevé mémorisé quel que soit le lot qui l'a produit :
+            # c'est tout le sens d'un TTL, et `conversations`, lui, est de toute
+            # façon recalculé pour cet appelant-ci. Étendre la signature au
+            # chemin normal ferait balayer une fois par conversation qui démarre
+            # même quand personne ne regarde l'onglet.
+            if (_CACHE["data"] is not None
+                    and (time.time() - _CACHE["at"]) < fenetre
+                    and (not force or _meme_instantane(signature))):
+                return _servir_du_cache(config, sessions, maintenant)
+            if not _EN_COURS["balayages"] or attentes >= ATTENTES_MAX:
+                break
+            # UN BALAYAGE TOURNE DÉJÀ : on attend son résultat au lieu d'en
+            # lancer un second identique. La fenêtre de temps seule ne suffisait
+            # pas — elle ne dédoublonne que ce qui arrive APRÈS la fin du
+            # premier balayage, or le cas mesuré (3 onglets, une conversation
+            # qui démarre : 243 processus git) est fait d'appels qui se
+            # recouvrent. Au réveil on repasse par le test ci-dessus : le relevé
+            # tout juste mémorisé a 0 s, il entre dans la fenêtre même la plus
+            # étroite — et s'il a vu un AUTRE lot de sessions que le nôtre, on
+            # sort balayer, ce qui est le comportement voulu : la coalescence
+            # mutualise le travail, elle ne fait pas passer un relevé pour un
+            # autre. Le prix est une attente de la durée du balayage en cours
+            # (~0,16 s) avant de lancer le nôtre, et c'est le seul cas où elle
+            # ne sert à rien.
+            attentes += 1
+            _VERROU.wait(ATTENTE_BALAYAGE)
+        # Un COMPTEUR et non un booléen : celui qui sort de la boucle par
+        # épuisement de sa patience balaie alors qu'un autre balaie encore, et
+        # un booléen remis à False par le premier des deux qui finit rouvrirait
+        # la porte à un troisième balayage. La coalescence dégrade ici — deux
+        # balayages au lieu d'un — mais elle ne se désarme pas.
+        _EN_COURS["balayages"] += 1
 
+    try:
+        return _balayer_et_memoriser(config, sessions, us_de, maintenant, signature)
+    finally:
+        # Y COMPRIS SUR ÉCHEC : un balayage qui lève doit réveiller ceux qui
+        # l'attendaient, sinon ils patientent pour rien avant de repartir.
+        with _VERROU:
+            _EN_COURS["balayages"] -= 1
+            _VERROU.notify_all()
+
+
+def _balayer_et_memoriser(config, sessions, us_de, maintenant, signature):
+    """Le chemin froid : balayage git, mise en cache, réponse de l'appelant.
+
+    Tourne HORS du verrou — un balayage dure 155-164 ms et tient 8 processus
+    git de front ; le tenir sous verrou figerait `dernier()`, appelé une fois
+    par seconde par la boucle SSE. L'exclusion des balayages concurrents est
+    assurée en amont par `_EN_COURS`, pas par le verrou.
+    """
     try:
         arbres, degrade = _balayer(config, sessions, us_de or _us_defaut)
     except Exception as e:                       # aucune trace ne remonte à l'écran
@@ -549,6 +825,11 @@ def scan(config, sessions=None, us_de=None, force=False):
                 "age_s": 0, "degrade": degrade,
                 "conversations_inconnues": sessions is None}
 
+    # LES GROUPES MÉMORISÉS NE PORTENT PAS `conversations`, et c'est ce qui rend
+    # l'invariant vrai PAR CONSTRUCTION plutôt que par vigilance : ce que le
+    # cache ne contient pas ne peut pas être servi périmé à l'appelant suivant.
+    # Le comptage est dérivé au retour, ici comme sur le chemin du cache — une
+    # seule fonction, deux chemins, la même règle.
     groupes = _habiller(arbres, config, maintenant)
     compteurs = {e: sum(1 for a in arbres if a["etat"] == e) for e in ETATS}
     liberables = sum(1 for a in arbres if a.get("liberable"))
@@ -592,7 +873,17 @@ def scan(config, sessions=None, us_de=None, force=False):
         with _VERROU:
             _CACHE["at"] = time.time()
             _CACHE["data"] = data
-    return dict(data)
+            # Écrite dans le MÊME bloc que le relevé : une signature qui ne
+            # décrirait pas le `data` d'à côté ferait resservir à un `force` un
+            # relevé calculé sur un autre monde, ce que tout ceci existe pour
+            # empêcher. Non-None par construction, `sessions` ne l'étant pas.
+            _CACHE["signature"] = signature
+    # La réponse de CET appelant, dérivée du relevé qu'on vient de mémoriser.
+    # `dict(data)` puis remplacement de `groupes` : le relevé mémorisé ne doit
+    # pas hériter de la clé qu'on vient de refuser de lui donner.
+    reponse = dict(data)
+    reponse["groupes"] = _compter_conversations(groupes, config, sessions)
+    return reponse
 
 
 # ------------------------------------------------------------ auto-vérification
@@ -636,9 +927,71 @@ def main():
                     a["libelle"], a["us"] or "—", (a["branche"] or "(détachée)")[:44],
                     a["arbre"][:16], " ".join(bouts),
                     "  ⚠ " + a["alerte"] if a["alerte"] else ""))
+    config = _config_reelle()
     debut = time.time()
-    scan(_config_reelle(), sessions=[])
+    avec = scan(config, sessions=[])
     print("\nrelecture depuis le cache : %.2f ms" % ((time.time() - debut) * 1000))
+
+    # Le dédoublonnage des balayages forcés, sur la config réelle : le premier
+    # `force` de cette auto-vérification date de moins de FENETRE_FORCE et a vu
+    # le même lot de sessions (`[]`), celui-ci doit donc être resservi. S'il
+    # rebalaie, on le voit au temps (165 ms).
+    debut = time.time()
+    scan(config, sessions=[], force=True)
+    ms = (time.time() - debut) * 1000
+    print("second `force` sous %.0f s      : %.2f ms — %s"
+          % (FENETRE_FORCE, ms, "dédoublonné" if ms < 20 else "REBALAYÉ, À CORRIGER"))
+
+    # LA RAFALE, le cas qui motive tout le dédoublonnage : N onglets réagissent
+    # au même changement, donc présentent la MÊME signature. Un seul balayage
+    # doit être payé pour tous — ici zéro, celui du premier `force` servant
+    # encore.
+    rafale = 5
+    at_avant = _CACHE["at"]
+    debut = time.time()
+    for _ in range(rafale):
+        scan(config, sessions=[], force=True)
+    ms_rafale = (time.time() - debut) * 1000
+    # La DATE du relevé mémorisé, et non le chronomètre : un poste sans dépôt
+    # sous ses racines balaierait en 2 ms et un seuil de temps le déclarerait
+    # dédoublonné à tort. `at` ne bouge que quand un balayage a vraiment eu lieu.
+    rafale_gratuite = _CACHE["at"] == at_avant
+    print("%d `force` de même signature   : %.2f ms au total (%.2f ms/appel)"
+          % (rafale, ms_rafale, ms_rafale / rafale))
+
+    # Et la garantie que la fenêtre seule ne donnait pas : un lot de sessions
+    # DIFFÉRENT rebalaie, même sous la fenêtre. Le cwd est réel pour que le
+    # rattachement se fasse comme en production ; le sid ne peut appartenir à
+    # aucune conversation.
+    faux = [{"sid": "auto-verification", "cwd": os.getcwd(), "state": "working"}]
+    debut = time.time()
+    scan(config, sessions=faux, force=True)
+    ms_autre = (time.time() - debut) * 1000
+    autre_rebalaye = _CACHE["signature"] == _signature_sessions(faux)
+    print("`force` à signature différente : %.2f ms — %s"
+          % (ms_autre, "rebalayé" if autre_rebalaye else "DÉDOUBLONNÉ, À CORRIGER"))
+
+    # « None n'est pas zéro », sur les deux chemins, plus l'invariant de cache.
+    # Ces trois lignes-là sont la raison d'être du champ : les vérifier ici
+    # coûte deux lectures de cache et attrape une régression que l'affichage
+    # ci-dessus, tout vert, ne montrerait jamais.
+    sans = scan(config, sessions=None)
+    memorise = (_CACHE["data"] or {}).get("groupes") or []
+    controles = [
+        ("un entier quand on sait",
+         all(isinstance(g.get("conversations"), int) for g in avec["groupes"])),
+        ("None quand on ne sait pas",
+         all(g.get("conversations") is None for g in sans["groupes"])),
+        ("le relevé mémorisé ne porte pas la clé",
+         all("conversations" not in g for g in memorise)),
+        ("le cache-hit ne lève pas `conversations_inconnues`",
+         sans.get("conversations_inconnues") is False),
+        ("une rafale de `force` à même signature ne rebalaie pas",
+         rafale_gratuite),
+        ("un `force` à signature différente rebalaie", autre_rebalaye),
+    ]
+    for libelle, ok in controles:
+        print("  %s %s" % ("OK  " if ok else "ÉCHEC", libelle))
 
 
 if __name__ == "__main__":

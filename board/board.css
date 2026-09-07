@@ -466,19 +466,154 @@ body{
    qu'un croissant de lune ne disait pas : que ça a deux positions.
 
    Aucune ligne de JS : `data-theme` est déjà posé sur la racine par poseTheme,
-   il pilote directement la position du curseur. */
+   il pilote directement la position du curseur.
+
+   ── LA GÉOMÉTRIE EST ICI, L'ÉTAT EST PARAMÈTRE ───────────────────────────────
+   Le second commutateur du produit — « avec conversation », onglet-chantier.css —
+   avait dû RECOPIER ces huit déclarations pour n'en changer qu'une : la position
+   du curseur, que `:root[data-theme="sombre"]` liait au thème de la page. Huit
+   lignes dupliquées pour une, protégées par la promesse de rester « identiques
+   au millimètre » — promesse que le premier qui retouche cette règle-ci
+   casserait, sans qu'aucun test ne s'en aperçoive.
+
+   Les quatre custom properties ci-dessous libèrent ce qui varie — position,
+   fond, pouce, contour — et rien d'autre. `.bascule` redevient réutilisable :
+   qui veut un commutateur prend cette classe et repose les quatre variables sur
+   l'état de SON contrôle, sans rien recopier et sans rien promettre. Les valeurs
+   par défaut sont exactement le dessin d'avant. Les propriétés se posent sur le
+   rail (ou plus haut) : `::after` en hérite, comme tout pseudo-élément.
+
+   LE CONTOUR N'EST PAS UN ORNEMENT, c'est le correctif de contraste que les deux
+   commutateurs partagent désormais. La bascule de thème repose sur `.chrome`,
+   dont le fond est --panel malgré son nom — vérifié dans le navigateur, pas
+   déduit du nom de la classe. Sur ce fond, le rail --line ne fait que 1,31:1 en
+   sombre et 1,17:1 en clair : ce contrôle n'avait AUCUNE forme perceptible
+   (WCAG 1.4.11, seuil 3:1), et son état ne tient qu'à la POSITION d'un point de
+   9 px dans un rail qu'on ne voyait pas. Le contour --t3 porte cette forme à
+   5,42 (sombre) et 5,07 (clair) — mêmes chiffres que pour l'interrupteur du
+   Chantier, qui repose sur le même pigment de fond. Le curseur --t2 sur --line
+   vaut déjà 6,28 / 6,29 : il ne bouge pas.
+
+   Conséquence du `transition:box-shadow` : un changement de thème fait glisser
+   la couleur du contour en 180 ms, comme il fait déjà glisser le curseur. C'est
+   voulu, et c'est neutralisé par `prefers-reduced-motion` comme le reste. */
 .bascule .rail{
-  position:relative; display:block; width:20px; height:11px;
-  border-radius:var(--r-jeton); background:var(--line);
+  position:relative; display:block; flex:0 0 auto; width:20px; height:11px;
+  border-radius:var(--r-jeton);
+  background:var(--rail-fond,var(--line));
+  box-shadow:0 0 0 1px var(--rail-contour,var(--t3));
+  transition:box-shadow .18s ease-out;
 }
 .bascule .rail::after{
-  content:""; position:absolute; top:1px; left:1px;
-  width:9px; height:9px; border-radius:50%; background:currentColor;
+  content:""; position:absolute; top:1px; left:var(--rail-pos,1px);
+  width:9px; height:9px; border-radius:50%;
+  background:var(--rail-pouce,currentColor);
   transition:left .18s ease-out;
 }
-:root[data-theme="sombre"] .bascule .rail::after{left:10px}
+/* Le sélecteur est `.theme.bascule` et non `.bascule` : depuis que la classe est
+   réutilisable, une règle générique liée au thème de la PAGE fuirait sur tout
+   commutateur qui n'a rien à voir avec le thème — et poserait son curseur à
+   droite en sombre, ce qui est exactement le piège qui avait fait recopier cette
+   feuille au lieu de la réutiliser. Seule la bascule de thème lit `data-theme`. */
+:root[data-theme="sombre"] .theme.bascule{--rail-pos:10px}
 @media (prefers-reduced-motion:reduce){
-  .bascule .rail::after{transition:none}
+  .bascule .rail,.bascule .rail::after{transition:none}
+}
+
+/* ═══════════ L'INTERRUPTEUR « avec conversation » ════════════════════════════
+   Le SECOND commutateur de cette barre, et le premier contrôle du chrome qui
+   gouverne le CONTENU de deux écrans : l'accueil (une colonne par projet, dont
+   celles sans conversation) et le Chantier (un bloc par projet). Il a d'abord
+   vécu dans la barre de l'onglet Chantier ; il n'y filtrait qu'un écran sur
+   deux, et pas celui qu'on regarde en arrivant.
+
+   POURQUOI IL GARDE UN LIBELLÉ ÉCRIT, alors que la bascule de thème n'en a pas.
+   Ce n'est pas une incohérence, c'est la différence entre les deux contrôles.
+   Le thème se donne à voir : on l'actionne, tout change de couleur, le résultat
+   EST l'explication. Un filtre fait le contraire — il RETIRE, et ce qui est
+   retiré ne peut pas expliquer son absence. Un rail muet qui fait disparaître
+   trois colonnes est exactement l'écran qui ment que ce dépôt s'interdit. Le
+   libellé coûte 117 px sur une barre qui en a 378 de libres à 1440 (mesuré) et
+   qui passe de toute façon en deux rangées sous 1415 : il est payable.
+
+   ET C'EST LE MÊME MOT QUE PARTOUT AILLEURS. « avec conversation » est déjà le
+   nom du contrôle dans l'aide, dans l'annonce et dans l'aveu ; c'est aussi le
+   mot de la demande d'origine (« tous les projets avec une conv claude »). Un
+   cinquième vocabulaire — « actifs », « au travail » — aurait été un mot de plus
+   à apprendre pour zéro information de plus, dans un contrôle dont la revue
+   précédente reprochait précisément d'avoir quatre vocabulaires. L'adjectif est
+   orphelin, hors contexte d'onglet ; c'est l'aveu juste à côté qui lui rend son
+   nom : « avec conversation · 3 masqués » se lit sans effort.
+
+   LA BOÎTE est celle de `.theme` au pixel — même hauteur, même bordure
+   transparente qui SE MÉRITE PAR L'ÉTAT, même rayon. Deux contrôles voisins dans
+   la même barre sont la même boîte, sinon l'un des deux a l'air posé dessus.
+   Le survol prend en revanche la recette de `.aide-onglet` (fond --card) et non
+   celle de `.theme` (fond --panel) : le fond de cette barre EST --panel, donc
+   `.theme:hover` ne change aucun pixel de surface. */
+.filtre{
+  position:relative;             /* ancre la case retirée du flux */
+  display:flex; align-items:center; gap:7px; cursor:pointer; flex:none;
+  height:28px; padding:0 9px;
+  border:1px solid transparent; border-radius:var(--r-ctrl);
+  font-family:var(--mono); font-size:11.5px; line-height:1; color:var(--t3);
+  white-space:nowrap; user-select:none;
+}
+/* La case sort du flux visuel mais NI du DOM NI DE LA TABULATION — ni
+   `display:none` ni `visibility:hidden`, qui la retireraient des deux. Le rail
+   n'est qu'un dessin ; c'est la case native qui porte l'état, le clavier et la
+   barre d'espace. Aucun `role="switch"` : HTML sait déjà dire tout ça. */
+.filtre input{
+  position:absolute; width:1px; height:1px; margin:0; padding:0;
+  opacity:0; pointer-events:none;
+}
+/* `--rail-pos:1px` est POSÉ et non laissé au défaut : la position est la seule
+   variable qu'une règle de board.css repose plus haut dans l'arbre (voir
+   `:root[data-theme="sombre"] .theme.bascule`). La déclarer sur le rail rend cet
+   interrupteur imperméable à ce que `.bascule` gagnera plus tard — sa position
+   ne dépend QUE de sa case. */
+.filtre .rail{--rail-pos:1px}
+.filtre input:checked ~ .rail{
+  --rail-pos:10px; --rail-fond:var(--sky);
+  --rail-contour:var(--sky); --rail-pouce:var(--panel);
+}
+.filtre input:checked ~ .txt{color:var(--t1)}
+/* Le survol vit sur la BOÎTE et sur le rail, jamais sur l'encre du texte : celle
+   du texte appartient à l'ÉTAT (--t3 éteint, --t1 allumé), et la lui emprunter
+   ferait qu'éteint+survol imite exactement allumé. Un contrôle dont deux états
+   se ressemblent au survol est un contrôle qui ment. */
+.filtre:hover{background:var(--card); border-color:var(--line)}
+.filtre:hover .rail{--rail-contour:var(--t1)}
+/* L'anneau ceint le contrôle entier et non le rail de 20 × 11 : c'est sur la
+   boîte qu'on a tabulé. `:has()` parce que la case est un enfant du label —
+   même idiome que fiche.css. */
+.filtre:has(input:focus-visible){outline:2px solid var(--sky); outline-offset:2px}
+
+/* ── L'AVEU, COLLÉ À CE QUI LE CAUSE ──────────────────────────────────────────
+   Un écran qui retire trois colonnes sans le dire ment sur ce qu'il montre.
+   L'aveu est donc posé contre l'interrupteur, et pas ailleurs : c'est là que va
+   l'œil de qui se demande « où sont passées mes colonnes ? », et c'est le seul
+   endroit qui reste vrai sur les DEUX écrans que ce contrôle gouverne — un aveu
+   par écran aurait été deux nombres à tenir d'accord.
+   Encre la plus discrète, comme `.ch-cpt.masque` : un projet retiré de la liste
+   n'est pas une alerte, c'est un aveu. Le ⚠ ambre qui peut le suivre, lui, en
+   est une : il dit qu'un projet masqué contient du travail qu'on peut perdre. */
+.fc-aveu{
+  flex:none; font-family:var(--mono); font-size:11px; color:var(--t3);
+  white-space:nowrap; cursor:help;
+}
+.fc-aveu b{font-weight:400; color:var(--t3); font-variant-numeric:tabular-nums}
+.fc-aveu .peril{color:var(--amber); margin-left:5px}
+.fc-aveu[hidden]{display:none}
+
+/* Présent dans le DOM et dans l'arbre d'accessibilité, absent de l'écran. Fait
+   descendre dans le document ce qui ne vivrait sinon que dans un `title` —
+   inatteignable au clavier comme au lecteur d'écran (WCAG 1.3.1). `clip-path`
+   et non `display:none` ni `visibility:hidden` : ces deux-là retireraient le
+   texte de l'arbre, ce qui est exactement le défaut qu'on corrige. */
+.hors-vue{
+  position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap;
 }
 
 /* ═════════════════ adopter un projet détecté ═════════════════════════════════
@@ -512,6 +647,90 @@ body{
 .adopt-l:hover{background:var(--card); border-color:var(--line)}
 .adopt-l:hover b{color:var(--t1)}
 .adopt-l:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ═══════════ chercher les projets du poste — la bande sous les colonnes ══════
+   DEUX BLOCS D'ADOPTION, DEUX FORMES, ET LA DIFFÉRENCE EST VOULUE. `.adopt`
+   ci-dessus vit DANS une colonne : bordure pointillée, fond transparent, parce
+   qu'il dit « une place possible, pas encore une place » à l'endroit exact où
+   cette place manquerait. Celui-ci vit SOUS le board et parle de la liste
+   entière ; il porte donc la forme des surfaces autonomes de cet écran —
+   `--panel`, filet plein, ombre, rayon de panneau — la même que `.col` et que
+   `.attention`. Emprunter le pointillé ici l'aurait dilué : ce n'est plus une
+   place vide, c'est un panneau qui rend des résultats.
+
+   `flex:none` ET UNE HAUTEUR PLAFONNÉE. Le corps est une colonne flex dont
+   `.board` prend le reste (`flex:1`) : sans `flex:none` la bande se ferait
+   comprimer par les colonnes, et sans `max-height` seize candidats mangeraient
+   le board qu'ils sont censés compléter. La liste défile à l'intérieur. */
+.decouv{
+  flex:none; margin:0 14px 12px; padding:10px 12px 11px;
+  display:flex; flex-direction:column; gap:8px;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--r-panneau); box-shadow:var(--ombre);
+  max-height:38vh; overflow-y:auto; scrollbar-width:thin;
+  font-family:var(--mono);
+}
+.dc-tete{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+/* Le bouton porte un CONTOUR PLEIN en --sky, et pas le filet neutre des lignes
+   d'adoption : c'est la seule commande de la bande, elle demande une
+   autorisation, et sa limite doit se distinguer du fond sans dépendre du texte
+   (WCAG 1.4.11 — mesuré 5,90:1 en sombre, 6,43:1 en clair sur --panel). */
+.dc-go{
+  flex:none; font-family:var(--mono); font-size:12px; cursor:pointer;
+  border:1px solid var(--sky); border-radius:var(--r-ctrl);
+  background:var(--card); color:var(--sky); padding:7px 16px;
+}
+.dc-go:hover:not(:disabled){background:var(--card-haut)}
+/* Désactivé PENDANT le balayage, et il faut que ça se voie : un bouton qui garde
+   son contour d'accent pendant trois secondes invite à recliquer. */
+.dc-go:disabled{cursor:progress; border-color:var(--edge-off); color:var(--t3)}
+.dc-go:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+.dc-mot{margin:0; flex:1 1 26ch; min-width:0; font-size:11px; color:var(--t3); line-height:1.55}
+/* L'échec prend l'ambre — « je n'ai pas fait ce que tu attendais » — la même
+   encre que `#nouveau .msg`, et pas le rouge : rien n'est cassé, rien n'a été
+   parcouru, et personne n'a rien perdu. */
+.dc-mot.mauvais{color:var(--amber)}
+/* La progression est INDÉTERMINÉE : le serveur ne publie pas d'avancement, et
+   une barre qui se remplirait en inventant un pourcentage mentirait. */
+.dc-jauge{flex:none; height:2px; border-radius:var(--r-jeton);
+          background:var(--line); overflow:hidden}
+.dc-jauge i{display:block; height:100%; width:30%; border-radius:inherit;
+            background:var(--sky); animation:dc-va 1.15s ease-in-out infinite alternate}
+@keyframes dc-va{from{transform:translateX(0)} to{transform:translateX(233%)}}
+/* Sans mouvement, le filet reste — l'attente doit rester VISIBLE, c'est
+   seulement le va-et-vient qui disparaît. Le libellé du bouton (« recherche en
+   cours… ») et `aria-busy` disent le reste, et eux ne dépendent d'aucun pixel.
+   IL GARDE --sky, ET C'EST UNE CORRECTION MESURÉE : il passait en --edge-off,
+   soit 1,29:1 sur sa piste en sombre et 1,19:1 en clair — un indicateur d'état
+   non textuel indiscernable de son fond, donc un état invisible pour qui a
+   désactivé les animations (WCAG 1.4.11 demande 3:1). En --sky il mesure 4,49:1
+   et 5,50:1. Retirer le mouvement ne doit pas retirer l'information. */
+@media (prefers-reduced-motion:reduce){
+  .dc-jauge i{animation:none; width:100%}
+}
+.dc-degrade{margin:0; font-size:11px; color:var(--amber); line-height:1.55}
+/* Le glyphe est le seul morceau de cette ligne qui n'est pas de la prose : il
+   porte donc la graisse, pour se lire à la taille d'un caractère de 11 px. */
+.dc-degrade .dc-alerte{font-weight:700}
+/* Une grille et non une pile : seize candidats en colonne unique demanderaient
+   de faire défiler une bande de 38 vh pour lire une liste de noms courts. */
+.dc-liste{display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:3px}
+.dc-liste:empty{display:none}
+/* Même dessin que `.adopt-l`, et c'est le but : la ligne fait la même chose
+   (ouvrir le formulaire d'adoption pré-rempli) et doit donc se lire pareil. */
+.dc-l{
+  display:grid; grid-template-columns:minmax(0,1fr); gap:1px;
+  font-family:var(--mono); text-align:left; cursor:pointer;
+  background:none; border:1px solid transparent; border-radius:var(--r-ctrl);
+  padding:5px 7px; color:inherit;
+}
+.dc-l b{font-size:12px; font-weight:700; color:var(--t2); letter-spacing:.04em}
+.dc-l span,.dc-l em{font-size:10.5px; color:var(--t3); overflow:hidden;
+                    text-overflow:ellipsis; white-space:nowrap}
+.dc-l em{font-style:normal}
+.dc-l:hover{background:var(--card); border-color:var(--line)}
+.dc-l:hover b{color:var(--t1)}
+.dc-l:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
 
 /* ═════════════════════ bandeau d'attention ════════════════════════════════ */
 /* LA HAUTEUR EST FIXE, 40 px, dans les deux régimes — et ce n'est pas un détail.
@@ -766,6 +985,16 @@ a.att:hover{text-decoration:none}
        /* posée par board.js selon le nombre de projets ouverts */
        grid-template-columns:var(--cols,none)}
 .board.vide{place-content:center; color:var(--t3)}
+/* Le vide du SOIR : plus aucune conversation, et « avec conversation » a retiré
+   les colonnes restantes. C'est le cas le plus fréquent de cet écran vide, et le
+   seul où l'aveu du chrome ne suffit pas — il n'y a rien en dessous pour lui
+   donner une échelle. On nomme donc ici la cause ET le geste, en toutes lettres.
+   `max-width` en ch : une ligne de prose centrée sur 1500 px ne se lit pas. */
+.board-vide{
+  margin:0; max-width:56ch; text-align:center; line-height:1.7;
+  font-family:var(--mono); font-size:12.5px; color:var(--t3);
+}
+.board-vide b{color:var(--t2); font-weight:700}
 /* Le panneau porte son propre rembourrage : les cartes sont des surfaces posées
    DEDANS, jamais des lignes qui touchent ses bords. C'est ce qui distingue un
    panneau d'une liste encadrée. */
@@ -1150,7 +1379,12 @@ a.att:hover{text-decoration:none}
 #voile{position:fixed; inset:0; display:none; place-content:center; z-index:50;
        background:var(--voile); backdrop-filter:saturate(.35)}
 body.perdu #voile{display:grid}
-body.perdu .board,body.perdu .histo{opacity:.4}
+/* La bande de recherche se grise avec le board, et pas parce qu'elle dépend du
+   flux — elle n'en dépend pas. C'est que « FLUX PERDU » couvre TOUT l'écran :
+   laisser une seule zone à pleine encre sous le voile la ferait passer pour la
+   seule encore vraie, alors que le relevé qu'elle affiche a le même âge que le
+   reste. Le bouton reste cliquable, la recherche marche flux mort. */
+body.perdu .board,body.perdu .histo,body.perdu .decouv{opacity:.4}
 #voile div{font-size:14px; font-weight:700; letter-spacing:.18em; color:var(--amber);
            border:1px solid var(--amber); border-radius:var(--r-panneau); padding:14px 26px;
            background:var(--chrome)}
@@ -1181,6 +1415,81 @@ dialog#nouveau::backdrop{background:var(--voile)}
 #nouveau button:hover{color:var(--t1)}
 #nouveau button.primaire{border-color:var(--sky); color:var(--sky)}
 #nouveau button:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* ═════════════════════ dialogue d'autorisation ═══════════════════════════════
+   Il emprunte la forme du dialogue d'AIDE et non celle du formulaire : ce qu'on
+   y fait, c'est LIRE. Trois titres, deux listes, quatre phrases — et un pied à
+   deux boutons dont le refus est à gauche, comme partout ailleurs ici.
+
+   `dialog:focus-visible{outline:none}` est délibéré. On pose le focus sur le
+   dialogue lui-même à l'ouverture (voir `ouvrirAutorisation`) pour que le
+   panneau se lise depuis le début et qu'aucun bouton ne soit armé ; un anneau
+   de 2 px autour de la boîte entière ne désignerait rien d'actionnable et se
+   lirait comme une bordure de plus. Les deux boutons, eux, gardent le leur. */
+dialog#autorisation{
+  border:1px solid var(--line); border-radius:var(--r-dialogue); background:var(--panel);
+  color:var(--t1); padding:0; width:min(600px,94vw); max-height:88vh;
+  font-family:var(--mono); font-size:12.5px;
+}
+/* `display` porté par [open] et jamais par l'élément nu — même piège que
+   `dialog#aide`, dont le commentaire porte le détail. */
+dialog#autorisation[open]{display:flex; flex-direction:column}
+dialog#autorisation::backdrop{background:var(--voile)}
+dialog#autorisation:focus-visible{outline:none}
+#autorisation h2{
+  border-radius:calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px) 0 0;
+  flex:none; margin:0; padding:14px 20px; font-size:12.5px; font-weight:700;
+  letter-spacing:.14em; border-bottom:1px solid var(--line);
+  background:var(--chrome); color:var(--t2);
+}
+#autorisation .corps{overflow-y:auto; padding:18px 20px; line-height:1.65}
+#autorisation .phrase{
+  margin:0 0 18px; padding:12px 14px; font-size:13px; line-height:1.6;
+  border-left:3px solid var(--sky); background:var(--card); color:var(--t1);
+  border-radius:0 var(--r-panneau) var(--r-panneau) 0;
+}
+#autorisation h3{
+  margin:18px 0 6px; font-size:11px; font-weight:700; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--t3);
+}
+#autorisation p{margin:0 0 6px; color:var(--t2); max-width:70ch}
+#autorisation b{color:var(--t1); font-weight:600}
+#autorisation code{
+  font-size:11.5px; color:var(--t2); background:var(--card);
+  border:1px solid var(--line); border-radius:var(--r-puce); padding:1px 5px;
+}
+#autorisation ul{margin:0; padding-left:0; list-style:none}
+#autorisation ul li{margin:0 0 5px; padding-left:15px; position:relative;
+                    color:var(--t2); max-width:70ch}
+#autorisation ul li::before{
+  content:""; position:absolute; left:0; top:.62em;
+  width:5px; height:1px; background:var(--t3);
+}
+#autorisation .pieds{
+  border-radius:0 0 calc(var(--r-dialogue) - 1px) calc(var(--r-dialogue) - 1px);
+  flex:none; display:flex; justify-content:flex-end; gap:10px;
+  padding:13px 20px; border-top:1px solid var(--line); background:var(--chrome);
+}
+/* LE FILET DU BOUTON SECONDAIRE EST EN --t3, ET PAS EN --line COMME AILLEURS.
+   Mesuré sur le pied du dialogue (--chrome) : le remplissage --card y vaut
+   1,23:1 en sombre et 1,16:1 en clair, et le filet --line 1,48:1 et 1,05:1.
+   Autrement dit, avec l'habillage des dialogues existants, « Annuler » n'est
+   identifiable comme bouton QUE par son libellé — c'est le cas d'école de
+   l'échec 1.4.11, et il tombe ici sur le refus d'un panneau de consentement, le
+   seul bouton de tout l'écran qu'il ne faut pas rater. En --t3 la limite mesure
+   6,12:1 en sombre et 4,55:1 en clair. `.primaire` garde --sky (6,67:1 / 5,77:1).
+   MÊME DÉFAUT DANS #aide ET #nouveau, qui partagent cet habillage : il est
+   antérieur à ce panneau, il est signalé, et il n'est PAS corrigé ici — ces deux
+   dialogues sont sur des surfaces déjà auditées, et un filet plus visible s'y
+   décide en connaissance de cause, pas en passant. */
+#autorisation button{
+  font-family:var(--mono); font-size:12px; cursor:pointer; border-radius:var(--r-ctrl);
+  padding:7px 18px; border:1px solid var(--t3); background:var(--card); color:var(--t2);
+}
+#autorisation button.primaire{border-color:var(--sky); color:var(--sky)}
+#autorisation button:hover{color:var(--t1); border-color:var(--t2)}
+#autorisation button.primaire:hover{border-color:var(--sky)}
+#autorisation button:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
 
 /* ═════════════════════ LE BANDEAU SOUS CONTRAINTE ════════════════════════════
 
@@ -1422,6 +1731,11 @@ dialog#nouveau::backdrop{background:var(--voile)}
   /* le reste de la page suit */
   .attention{gap:14px; padding:0 10px}
   .board{padding:10px; gap:10px}
+  /* La bande suit la gouttière du board : elle est alignée sur les colonnes, pas
+     sur la fenêtre, et un décalage de 4 px se verrait. Plafond abaissé : en
+     régime étroit les colonnes défilent déjà, la bande ne doit pas leur prendre
+     un tiers de la hauteur. */
+  .decouv{margin:0 10px 10px; max-height:32vh}
   /* Empiler les colonnes projet plutôt que les écraser : deux panneaux de 400 px
      valent mieux que huit de 90. board.js n'écrit plus grid-template-columns en
      style inline mais la variable --cols, ce qui rend cette reprise possible sans
@@ -1537,6 +1851,17 @@ dialog#aide::backdrop{background:var(--voile)}
   text-transform:uppercase; color:var(--t3);
 }
 #aide h3:first-of-type{margin-top:0}
+/* Un SEUL sous-titre dans toute l'aide, et il est mérité : l'interrupteur « avec
+   conversation » est un contrôle du bandeau, donc il appartient à la section du
+   bandeau — mais il retire du contenu à deux écrans, ce qui demande quatre
+   paragraphes que personne ne doit avoir à lire pour comprendre la file
+   d'attente. Même casse et même graisse que h3, en encre plus discrète et sans
+   la respiration du dessus : il se lit comme une subdivision, pas comme une
+   nouvelle section. */
+#aide h4{
+  margin:14px 0 6px; font-size:11px; font-weight:700; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--t3); opacity:.85;
+}
 #aide p{margin:0 0 6px; color:var(--t2); max-width:74ch}
 #aide b{color:var(--t1); font-weight:600}
 #aide code{
@@ -1573,8 +1898,16 @@ dialog#aide::backdrop{background:var(--voile)}
    Sert exclusivement à AVOUER qu'une action n'a pas eu lieu, et pourquoi.
    Un clic qui ne fait rien en silence est un mensonge ; c'est la seule chose
    que ce board n'a pas le droit de faire. */
+/* `bottom` PORTE LA HAUTEUR DE LA BANDE DE RECHERCHE, et ce n'est pas un détail
+   cosmétique : les 56 px dégageaient le pied de page, seule chose qui vivait en
+   dessous. La bande « chercher les projets du poste » s'installe entre les deux,
+   et le toast « 4 projets trouvés » venait se poser exactement sur les quatre
+   lignes trouvées — six secondes durant, l'annonce masquait ce qu'elle
+   annonçait. board.js publie donc `--dc-h` (hauteur occupée par la bande, marge
+   comprise), à zéro quand elle est masquée : les trois autres onglets, et
+   l'accueil filtre allumé, retrouvent exactement les 56 px d'avant. */
 #avis{
-  position:fixed; left:50%; bottom:56px; transform:translateX(-50%);
+  position:fixed; left:50%; bottom:calc(56px + var(--dc-h,0px)); transform:translateX(-50%);
   z-index:60; max-width:min(680px,92vw);
   padding:10px 16px; border-radius:var(--r-panneau);
   border:1px solid var(--amber); background:var(--chrome); color:var(--t1);

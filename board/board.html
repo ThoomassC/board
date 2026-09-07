@@ -66,6 +66,27 @@
     <span class="ch-sep" aria-hidden="true"></span>
     <div class="ch-ctrl">
       <span class="flux" id="flux" title="Fraîcheur du flux"><b></b><span>—</span></span>
+      <!-- L'INTERRUPTEUR EST DANS LE CHROME PARCE QU'IL GOUVERNE DEUX ÉCRANS.
+           Il a d'abord vécu dans la barre de l'onglet Chantier, où il ne pouvait
+           filtrer que le Chantier — or l'écran d'accueil est celui qui affiche
+           une colonne par projet DÉCLARÉ, conversation ou pas, et c'est là que
+           les projets sur lesquels on ne travaille pas encombrent. Un même
+           besoin sur deux écrans, c'est un contrôle global, et le seul endroit
+           global de cette page est cette barre. Il est donc écrit ICI, en dur,
+           et non construit par un rendu : le chrome n'est jamais reconstruit,
+           donc l'interrupteur ne peut pas emporter le focus avec lui.
+           `autocomplete="off"` n'est pas décoratif : sans lui, le navigateur
+           restaure l'état de la case après un rechargement, ce qui PERSISTERAIT
+           une préférence d'affichage — exactement ce que la doctrine d'avecConv
+           interdit. board.js force en plus la case à l'allumage au démarrage. -->
+      <label class="bascule filtre" id="filtre-conv">
+        <input type="checkbox" id="fc-case" autocomplete="off" checked
+               aria-describedby="fc-desc">
+        <span class="rail" aria-hidden="true"></span>
+        <span class="txt">avec conversation</span>
+      </label>
+      <span class="fc-aveu" id="fc-aveu" hidden></span>
+      <span class="hors-vue" id="fc-desc"></span>
       <button class="theme bascule" id="btn-theme" type="button" title="Basculer le thème"><span class="rail" aria-hidden="true"></span></button>
       <button class="theme" id="btn-aide" type="button" title="À quoi sert cet écran ?"
               aria-label="Aide">?</button>
@@ -78,6 +99,39 @@
 </div>
 
 <main class="board" id="board" role="tabpanel" aria-labelledby="ong-board"></main>
+
+<!-- ═══ CHERCHER LES PROJETS DU POSTE — SOUS LE BOARD, ET SEULEMENT FILTRE ÉTEINT ══
+     POURQUOI ICI, ET PAS AILLEURS. Cette action parle de la COMPLÉTUDE DE LA
+     LISTE DE COLONNES : « voici tous les projets déclarés — et s'il en manque ? ».
+     Son objet est donc le board entier, pas une colonne.
+       · pas dans la colonne de repli, à côté de `.adopt` : ce bloc-là parle des
+         conversations ouvertes hors projet, un autre objet — et cette colonne
+         n'existe pas toujours, alors que le manque, lui, existe toujours ;
+       · pas DANS la grille du board : `--cols` est calculée sur le nombre de
+         projets, une cellule de plus rétrécirait toutes les colonnes, et « les
+         places sont fixes » est la doctrine de cet écran ;
+       · pas dans le bandeau : le bandeau est global, cette action ne vaut que
+         pour un état d'un seul onglet — et un bouton qui apparaît entre les
+         jauges et la bascule de thème ferait bouger les contrôles voisins ;
+       · pas dans le pied de page, que board.js appelle lui-même « la ligne la
+         moins lue de l'écran ».
+     Reste la bande sous les colonnes : au bout de la lecture du board, visible
+     sans défiler, et PRÉSENTE MÊME QUAND LE BOARD EST VIDE — c'est-à-dire
+     précisément quand la recherche est la plus utile.
+
+     ÉCRITE EN DUR, comme l'interrupteur du bandeau et pour la même raison :
+     `rendBoard` repasse une fois par seconde, et un bouton reconstruit à ce
+     rythme ne peut pas garder le focus. Seuls le message et la liste sont
+     rendus par board.js ; le bouton, lui, ne bouge jamais. -->
+<section class="decouv" id="decouv" aria-label="Projets du poste" hidden>
+  <div class="dc-tete">
+    <button type="button" class="dc-go" id="dc-go">chercher les projets du poste</button>
+    <p class="dc-mot" id="dc-mot"></p>
+  </div>
+  <div class="dc-jauge" id="dc-jauge" hidden><i></i></div>
+  <p class="dc-degrade" id="dc-degrade" hidden></p>
+  <div class="dc-liste" id="dc-liste"></div>
+</section>
 
 <section class="prs" id="prs" role="tabpanel" aria-labelledby="ong-pr" hidden></section>
 
@@ -172,6 +226,48 @@
       ailleurs&nbsp;: son contenu est ici, nommé, au lieu d'être un nombre sur un
       onglet qu'il fallait ouvrir pour le comprendre.</p>
 
+    <h4>L'interrupteur «&nbsp;avec conversation&nbsp;»</h4>
+    <p>À gauche de la bascule de thème, un second commutateur&nbsp;:
+      <b>avec conversation</b>. Allumé, l'écran ne garde que les projets où une
+      conversation Claude travaille <b>en ce moment</b> — les autres attendront
+      le jour où l'on y retournera. Il gouverne <b>deux écrans à la fois</b>,
+      parce que c'est le même besoin des deux côtés&nbsp;: sur
+      <b>Conversations</b> il retire la colonne du projet, sur <b>Chantier</b> il
+      retire son bloc d'arbres de travail. Un seul état, un seul geste.</p>
+    <p>Il est <b>allumé à chaque ouverture de page</b> et ne se mémorise nulle
+      part. Une préférence d'affichage qui survit à la nuit finirait par cacher,
+      un lundi matin, le projet où l'on a laissé vendredi soir trois fichiers non
+      commités — sans qu'aucune trace du geste de la semaine dernière n'explique
+      pourquoi.</p>
+    <p><b>Il ne masque jamais en silence.</b> Le compteur posé juste à sa droite
+      dit combien de projets ne sont pas affichés, et les nomme au survol comme
+      dans le texte lu par les lecteurs d'écran. Sur l'onglet Chantier il ajoute,
+      en <b style="color:var(--amber)">⚠ ambre</b>, combien de ces projets
+      masqués contiennent du travail qu'on peut perdre&nbsp;: du non commité, des
+      commits non poussés, une incohérence. Le compteur décrit toujours l'onglet
+      qu'on regarde.</p>
+    <p><b>Et il ne masque jamais sur une ignorance.</b> Quand le serveur n'a pas
+      pu lire l'état des conversations, il répond «&nbsp;je ne sais pas&nbsp;» et
+      non «&nbsp;aucune&nbsp;». Rien n'est alors retiré, sur aucun des deux
+      écrans&nbsp;: faire disparaître tous les projets sur une lecture ratée
+      serait le pire mensonge que cet écran puisse dire.</p>
+    <p>Un projet sans conversation est masqué <b>même s'il contient du travail
+      non commité</b>. C'est un choix assumé&nbsp;: l'interrupteur fait ce que son
+      libellé annonce, sans exception discrétionnaire — et ce qu'il emporte, il
+      le dit.</p>
+    <p><b>Éteint, il découvre une bande sous les colonnes</b>&nbsp;: c'est l'état
+      « tous les projets », donc le seul moment où la question « en
+      manque-t-il&nbsp;? » a un sens. Le bouton
+      <b>chercher les projets du poste</b> qui s'y trouve n'ouvre rien tout de
+      suite&nbsp;: il affiche d'abord ce qui sera lu — ton répertoire personnel,
+      sans les dossiers cachés, sans <code>Library</code>, sans la corbeille,
+      sans les <code>node_modules</code> — et rappelle que <b>seuls des noms de
+      dossiers</b> sont lus, jamais le contenu d'un fichier. La recherche ne part
+      qu'après ton accord, et cet accord <b>ne se mémorise pas</b>&nbsp;: il vaut
+      pour la page ouverte, et pas une minute de plus. Ce qu'elle trouve est
+      <b>proposé</b>, jamais ajouté&nbsp;: chaque ligne ouvre le formulaire
+      pré-rempli, comme une adoption ordinaire.</p>
+
     <h3>Les deux jauges du haut</h3>
     <p>Tes quotas 5 h et 7 j, avec le temps restant avant réinitialisation. Le petit
       trait vertical sur chaque jauge est le <b>repère de rythme</b>&nbsp;: il marque
@@ -200,6 +296,12 @@
         les propose en haut de la colonne <b>AUTRE</b>. Un clic ouvre le
         formulaire pré-rempli&nbsp;; valider crée la colonne, sa couleur, et dépose
         un lanceur <code>claude-nomprojet</code> dans <code>~/.local/bin</code>.</li>
+      <li><b>Chercher les projets du poste</b> — l'adoption ci-dessus ne voit que
+        les dossiers où une conversation est <em>déjà</em> ouverte. Éteins
+        <b>avec conversation</b>&nbsp;: sous les colonnes apparaît un bouton qui,
+        après ton autorisation, parcourt le répertoire personnel à la recherche
+        de dépôts git et propose ceux que le board ne connaît pas. Même
+        formulaire, même second geste.</li>
     </ul>
 
     <h3>Les quatre onglets</h3>
@@ -239,9 +341,19 @@
     <p>Chaque <b>dépôt</b> se replie d'un clic sur son nom. Replié, il annonce ce
       qu'il contient — et il n'a pas le droit de taire une incohérence&nbsp;: le
       <b>⚠</b> reste visible. Les projets, eux, ne se replient jamais.</p>
+    <p>L'interrupteur <b>avec conversation</b> du bandeau du haut vaut aussi
+      ici&nbsp;: il retire les <b>blocs de projet</b> où aucune conversation
+      Claude ne travaille, comme il retire leur colonne sur l'onglet
+      Conversations. Le compteur posé à sa droite dit alors combien de projets
+      sont partis et les nomme au survol. La règle complète est plus haut, à
+      <b>Le bandeau du haut</b>.</p>
+    <p>Quand tout est masqué, ce panneau ne se contente pas d'être vide&nbsp;: il
+      écrit ce qui manque et comment le revoir, et il répète en
+      <b style="color:var(--amber)">⚠ ambre</b> lesquels des projets masqués
+      contiennent du travail qu'on peut perdre.</p>
     <ul class="etats">
       <li><b>● en cours</b> — une conversation vivante travaille dedans.</li>
-      <li><b style="color:var(--sky)">➜ en revue</b> — une PR ouverte porte cette
+      <li><b style="color:var(--amber)">➜ en revue</b> — une PR ouverte porte cette
         branche. La balle est chez quelqu'un d'autre, mais l'horloge tourne.</li>
       <li><b style="color:var(--amber)">✋ non commité</b> — du travail modifié
         que ni PR ni conversation ne surveille. C'est la seule façon silencieuse
@@ -310,6 +422,94 @@
   <div class="pieds">
     <button type="button" id="np-annuler">Annuler</button>
     <button type="submit" form="form-projet" class="primaire" id="np-creer">Créer</button>
+  </div>
+</dialog>
+
+<!-- ═══ L'AUTORISATION DE LIRE LE DISQUE ════════════════════════════════════
+     Le premier clic sur « chercher les projets du poste » n'ouvre pas le
+     disque : il ouvre CE panneau. Lire un répertoire personnel entier est le
+     geste le plus intrusif de toute l'application, et il ne se déclenche pas
+     sur un clic qu'on peut faire par curiosité.
+
+     UN `<dialog>` NATIF, et pas un `confirm()` — les dialogues bloquants sont
+     proscrits ici — ni une div avec `role="dialog"` : `showModal()` donne le
+     rôle, le piège à focus, l'inertie du reste de la page et Échap = annuler,
+     sans une ligne de JavaScript à maintenir. `tabindex="-1"` sert au focus
+     d'ouverture, qui va sur le DIALOGUE et non sur un bouton : c'est un panneau
+     qu'on doit LIRE, et armer « Autoriser » d'avance transformerait une seconde
+     pression sur Entrée en autorisation d'accès au disque.
+
+     ── AUCUN `role` NI `aria-modal` ÉCRIT ICI, ET C'EST MESURÉ ─────────────────
+     Un sondage par ATTRIBUT sur cet élément renvoie `role: null` et
+     `aria-modal: null`, et on en a déjà conclu une fois qu'il « n'a aucun
+     rôle ». C'est un faux négatif : `getAttribute("role")` et l'IDL `.role`
+     reflètent l'attribut, pas la sémantique. Ce que lit un lecteur d'écran est
+     l'arbre d'accessibilité, et c'est là qu'il faut regarder — c'est la leçon
+     déjà payée sur `#avis` (voir son commentaire dans board.js, qui porte le
+     même genre de dump). Chromium, `Accessibility.getPartialAXTree` :
+
+       fermé  -> role "none",   ignored=true,  reason "notRendered"
+       ouvert -> role "dialog", ignored=false, modal=true, focusable=true,
+                 name "CHERCHER LES PROJETS DU POSTE"  (via aria-labelledby),
+                 describedby=true                      (via aria-describedby)
+
+     Le rôle, l'état modal, le nom et la description sont donc tous présents à
+     l'ouverture, sans un seul attribut ARIA de rôle. En écrire un dupliquerait
+     ce que `<dialog>` fait déjà, et `aria-modal="true"` deviendrait FAUX le jour
+     où quelqu'un appellerait `show()` au lieu de `showModal()` — alors que le
+     calcul natif, lui, suit l'appel. Balayage clavier, même relevé : 30 Tab puis
+     30 Maj+Tab depuis l'intérieur n'atteignent que `#au-annuler` et `#au-ok`
+     (plus le passage par l'UI du navigateur, où activeElement retombe sur body),
+     jamais un élément de la page derrière ; et le clic sur un contrôle du
+     bandeau est intercepté par `::backdrop`, thème inchangé.
+
+     LE CONSENTEMENT N'EST PAS MÉMORISÉ — même doctrine que `avecConv`, en plus
+     strict : une préférence d'affichage qui se réveille toute seule est une
+     gêne, une autorisation de lecture du disque qui se réveille toute seule est
+     une faute. Une fois par chargement de page, c'est un clic. -->
+<dialog id="autorisation" tabindex="-1"
+        aria-labelledby="au-titre" aria-describedby="au-quoi">
+  <h2 id="au-titre">CHERCHER LES PROJETS DU POSTE</h2>
+  <div class="corps">
+    <p class="phrase" id="au-quoi">Cette recherche parcourt ton <b>répertoire
+      personnel</b> pour y repérer les dossiers <code>.git</code>. Elle n'ouvre
+      <b>aucun fichier</b>&nbsp;: elle ne lit que des <b>noms de dossiers</b>.</p>
+
+    <h3>Ce qui sera parcouru</h3>
+    <ul>
+      <li>Ton <b>répertoire personnel</b> et ses sous-dossiers.</li>
+    </ul>
+
+    <h3>Ce qui ne le sera pas</h3>
+    <ul>
+      <li>Les dossiers <b>cachés</b> — ceux dont le nom commence par un point.</li>
+      <li><code>Library</code>, où les applications rangent leurs données.</li>
+      <li>La <b>corbeille</b>.</li>
+      <li>Les <code>node_modules</code>.</li>
+    </ul>
+
+    <h3>Ce qui n'arrivera pas</h3>
+    <p><b>Rien ne sera ajouté au board par cette recherche.</b> Elle rend une
+      liste, et rien d'autre. Chaque projet demande ensuite un second
+      geste&nbsp;: le formulaire s'ouvre pré-rempli, tu relis le nom, et c'est
+      toi qui valides.</p>
+    <!-- AUCUNE DURÉE PROMISE ICI, ET C'EST UNE CORRECTION. Cette phrase annonçait
+         « environ trois secondes sur ce poste » ; le module de découverte livré
+         parcourt 9 453 dossiers en 215 ms, mesuré trois fois de suite. Un chiffre
+         faux d'un facteur quatorze dans un panneau de consentement décrédibilise
+         tout le reste du panneau, et un chiffre juste aujourd'hui vieillira mal :
+         il dépend du disque, du cache et de la taille du répertoire. On promet
+         donc un ORDRE DE GRANDEUR, et on renvoie à la mesure réelle — le relevé
+         affiche à la fin le nombre exact de dossiers et le temps exact. -->
+    <p>Le balayage ne dure normalement <b>pas plus de quelques secondes</b>, et il
+      ne modifie rien — ni sur le disque, ni dans tes dépôts. Le nombre de dossiers
+      parcourus et le temps qu'il a pris sont affichés à la fin.</p>
+    <p>Cette autorisation <b>ne se mémorise pas</b>. Elle vaut pour cette page
+      ouverte&nbsp;; au prochain chargement, il faudra la redonner.</p>
+  </div>
+  <div class="pieds">
+    <button type="button" id="au-annuler">Annuler</button>
+    <button type="button" id="au-ok" class="primaire">Autoriser et chercher</button>
   </div>
 </dialog>
 

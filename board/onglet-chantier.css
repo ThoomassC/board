@@ -7,10 +7,25 @@
 
    LE VOCABULAIRE DES PIGMENTS EST CELUI DE LA BOARD, à la lettre — c'est tout
    l'intérêt d'un quatrième onglet dans le même produit : rien à réapprendre.
-     ambre  = il faut ta main            (non commité, comme BLOQUÉ)
-     ciel   = du travail livré dort      (en revue, comme À RELIRE)
+     ambre  = il faut ta main            (non commité, en revue, relevé vieilli,
+                                          bandeau dégradé — voir ci-dessous)
+     vert   = c'est bouclé               (branche terminée, comme dans l'onglet PR)
+     ciel   = accent de CHROME           (anneau de focus, interrupteur)
      gris   = plus aucun signe           (réserve, comme SILENCE)
      aucune = rien à faire               (en cours et socle, comme AU TRAVAIL)
+
+   DEUX RECTIFICATIFS, parce que cette table était fausse et qu'on lit une table
+   de pigments AVANT de choisir une couleur :
+
+   · L'AMBRE N'EST PAS RÉSERVÉ À « non commité », et ne l'a jamais été dans cet
+     onglet. Il porte aussi `.ch-cpt.en_revue`, `.ch-frais.vieux` et
+     `.ch-degrade`. Ce qu'il signifie vraiment, et qui couvre les quatre : « ça
+     n'ira pas tout seul ». Toute rédaction qui promet « la seule encre de… »
+     est à vérifier avant d'être crue.
+   · CIEL NE VEUT PAS DIRE « du travail livré dort ». `en_revue` est AMBRE ici.
+     Depuis la direction Ardoise, --sky est l'accent du CHROME et rien d'autre
+     (board.css le dit en tête) : dans cette feuille il ne sert qu'à l'anneau de
+     focus et à l'interrupteur, qui ne disent rien sur les arbres.
 
    « En cours » et « socle » partagent l'absence de couleur, et c'est juste :
    ni l'un ni l'autre ne demande quoi que ce soit. Le glyphe (● contre ·) et la
@@ -21,13 +36,23 @@
   font-family:var(--mono);
 }
 
-/* ── en-tête : les cinq compteurs ─────────────────────────────────────────
-   Cinq nombres et non un seul. Un compteur unique « 16 à traiter » sur 29
+/* ── en-tête : un compteur par état, et les aveux ─────────────────────────
+   Un nombre par état, et non un seul. Un compteur unique « 16 à traiter » sur 29
    arbres ne trierait rien — exactement le défaut que l'onglet PR a fini par
-   avoir en laissant `dort` gonfler `a_traiter`. Ici chaque état garde son
-   nombre, et seul « non commité » porte l'ambre. */
+   avoir en laissant `dort` gonfler `a_traiter`.
+   Le nombre de jetons N'EST PAS FIXE : selon le relevé il en apparaît de deux à
+   huit (le gros total, un par état listé, `libérables`, `branches terminées`,
+   `socles masqués`, `projets masqués`). Une rédaction antérieure annonçait « les
+   cinq compteurs » et « seul non commité porte l'ambre » : les deux étaient
+   fausses. Voir la table de pigments en tête de fichier.
+
+   `row-gap` PLUS SERRÉ QUE `column-gap`, et c'est mesuré : `gap:16px` servait
+   aussi de gouttière verticale, et la barre passait de ~46 à ~86 px de haut dès
+   qu'elle se cassait en deux lignes. Deux lignes de jetons ne sont pas deux
+   paragraphes ; 8 px suffisent à les distinguer, dans un panneau dont toute la
+   doctrine est de se lire d'un coup d'œil. */
 .ch-tete{
-  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  display:flex; align-items:center; gap:8px 16px; flex-wrap:wrap;
   padding:11px 14px; margin-bottom:18px;
   border:1px solid var(--line); border-radius:var(--r-panneau); background:var(--panel);
 }
@@ -44,11 +69,30 @@
    dit plutôt que de laisser croire qu'il montre tout. Encre la plus discrète. */
 .ch-cpt.masque b{color:var(--t3); font-weight:400}
 .ch-cpt.masque{cursor:help}
+/* `.ch-cpt.geste` et `.ch-cpt.masque b.peril` — les deux façons successives de
+   dénoncer, DANS CETTE BARRE, le travail qu'un projet masqué emporte avec lui —
+   ont été retirées avec l'interrupteur lui-même. Ce n'est pas un abandon : la
+   dénonciation existe toujours, en ambre, dans l'aveu du chrome (`.fc-aveu
+   .peril`, board.css), au seul endroit d'où elle vaut pour les DEUX écrans.
+   Ce qui reste ici est l'aveu que cette barre est seule à devoir : les lignes
+   socle, juste au-dessus. */
 .ch-cpt.lib b{color:var(--t2)}
 .ch-cpt.fini b{color:var(--green)}
 .ch-cpt.en_revue b{color:var(--amber)}
 .ch-cpt.en_cours b{color:var(--t1)}
-.ch-tete .droite{margin-left:auto; display:flex; align-items:center; gap:12px}
+/* `flex-wrap` N'EST PAS UN CONFORT : sans lui, ce groupe est indéformable, et un
+   groupe indéformable dans une barre étroite déborde horizontalement — ce
+   qu'interdit WCAG 1.4.10. Il a été ajouté quand l'interrupteur vivait ici et
+   portait le débordement à 368 px pour 320 de large ; l'interrupteur est parti
+   dans le chrome, mais fraîcheur + rafraîchir + ? restent un bloc que rien
+   n'autoriserait à se casser, et la barre s'élargira encore le jour où elle
+   gagnera un contrôle. La règle reste, sa mesure d'origine est datée.
+   Le `row-gap` serré vient de `.ch-tete`, dont ce groupe hérite l'idée : une
+   deuxième ligne ne doit pas coûter 40 px de hauteur. */
+.ch-tete .droite{
+  margin-left:auto; display:flex; align-items:center; flex-wrap:wrap;
+  gap:6px 12px; justify-content:flex-end;
+}
 .ch-frais{font-size:11px; color:var(--t3)}
 .ch-frais.vieux{color:var(--amber)}
 .ch-relire{
@@ -59,6 +103,17 @@
 .ch-relire:hover{color:var(--t1); background:var(--card)}
 .ch-relire:disabled{opacity:.5; cursor:default}
 .ch-relire:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+
+/* L'INTERRUPTEUR « avec conversation » N'EST PLUS DANS CETTE BARRE.
+   Il y a vécu tant qu'il ne filtrait que cet onglet. Il gouverne maintenant deux
+   écrans — l'accueil, qui affiche une colonne par projet déclaré, et celui-ci —
+   donc il vit dans le chrome, avec la bascule de thème : board.html `.ch-ctrl`,
+   et sa feuille est board.css (`.filtre`). Tout ce qui était ici — la boîte de
+   contrôle, le rail contouré, le survol sur le rail et pas sur l'encre, l'anneau
+   qui ceint le contrôle entier, les ratios de contraste — a suivi tel quel, y
+   compris la classe `.bascule` partagée avec la bascule de thème.
+   Le compteur `#ch-masque-conv` a suivi lui aussi : l'aveu est là où est le
+   contrôle qui le cause. Voir `majAveuFiltre` dans board.js. */
 
 .ch-degrade{
   padding:10px 13px; margin-bottom:16px; font-size:11.5px; line-height:1.6;
@@ -362,3 +417,8 @@
   .ch-etat{overflow:hidden; width:2.4ch}
   .ch-etat span{display:none}
 }
+
+/* L'aveu de l'état vide. Même ambre et même règle que le suffixe du jeton : c'est
+   le seul texte de l'écran quand tout est masqué, il doit nommer ce qu'on risque
+   de ne pas retrouver. Bloc, pas incise : il se lit après la phrase, pas dedans. */
+.ch-vide b.peril{display:inline-block; margin-top:8px; color:var(--amber); font-weight:600}
