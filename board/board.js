@@ -2352,6 +2352,11 @@ function ongler(quel) {
   // L'aveu du chrome décrit l'onglet VISIBLE : il change donc de sujet ici, avant
   // même que le nouvel onglet ait rendu quoi que ce soit.
   majAveuFiltre();
+  /* La bande « chercher les projets du poste » est un FRÈRE de #board dans le
+     flux, pas un enfant : masquer #board ne la masque pas. Sans cette ligne elle
+     resterait posée au-dessus du panneau Pull Requests, à parler d'un écran
+     qu'on ne regarde plus. */
+  majDecouv();
   if (quel === "histo") chargerHistorique();
   if (quel === "pr") chargerPR(false);
   if (quel === "chantier") {
@@ -2410,18 +2415,31 @@ $("#np-nom").addEventListener("input", ev => {
 /* Le bouton « + projet » de la barre a disparu : le serveur détecte lui-même les
    dossiers non déclarés et les propose en tête de la colonne AUTRE. Le formulaire
    reste, et s'ouvre PRÉ-REMPLI avec le nom et la racine devinés — l'utilisateur
-   corrige s'il veut, mais il n'a plus rien à taper dans le cas courant. */
-function ouvrirFormProjet(nom, racine) {
+   corrige s'il veut, mais il n'a plus rien à taper dans le cas courant.
+
+   UN SEUL CHEMIN D'ADOPTION, DEUX APPELANTS. `majAdoption` (colonne de repli) et
+   la recherche de projets du poste (`#decouv`) ouvrent ce MÊME formulaire et ne
+   connaissent aucune autre route que /api/projet — écrire une seconde adoption
+   aurait dédoublé la validation du nom, le lanceur et le message d'échec.
+   Ce que l'un des deux a besoin de savoir en plus, c'est QUAND ça a marché, pour
+   retirer sa ligne : d'où `apres`, un crochet à un coup. Il est posé à
+   l'ouverture, désarmé à la fermeture QUOI QU'IL ARRIVE (`close`, natif, couvre
+   Échap, le clic sur le fond et le bouton Annuler), et n'est donc jamais rejoué
+   par l'adoption suivante. */
+let adoptionSuite = null;
+function ouvrirFormProjet(nom, racine, apres) {
   const n = normaliserNom(nom || "");
   $("#np-nom").value = n;
   $("#np-racine").value = racine || "";
   texte($("#np-msg"), ""); $("#np-msg").className = "msg";
   texte($("#np-apercu"), "claude-" + (n.toLowerCase() || "nomprojet"));
+  adoptionSuite = typeof apres === "function" ? apres : null;
   dlg.showModal();
   // Le nom est deviné, la racine est un fait : c'est le nom qu'on vient relire.
   $("#np-nom").focus();
   $("#np-nom").select();
 }
+dlg.addEventListener("close", () => { adoptionSuite = null; });
 $("#np-annuler").onclick = () => dlg.close();
 
 $("#form-projet").addEventListener("submit", async ev => {
@@ -2442,7 +2460,15 @@ $("#form-projet").addEventListener("submit", async ev => {
   if (!r.ok) { msg.className = "msg"; texte(msg, r.message || "échec"); return; }
   msg.className = "msg ok";
   texte(msg, r.lanceur ? "créé · lanceur " + r.lanceur : (r.message || "créé"));
-  setTimeout(() => dlg.close(), 1400);
+  /* Le crochet est CAPTURÉ ici et joué APRÈS `close()`. Deux raisons, et les
+     deux sont des bugs qu'on évite : `close()` déclenche l'écouteur ci-dessus
+     qui remet `adoptionSuite` à null, donc le lire après serait le lire vide ;
+     et `close()` rend le focus au bouton qui a ouvert le formulaire — or c'est
+     précisément ce bouton que le crochet va retirer du document. Le jouer
+     ensuite lui laisse la main sur un focus déjà rendu, et il peut le replacer
+     là où il faut au lieu de le laisser retomber sur <body>. */
+  const suite = adoptionSuite;
+  setTimeout(() => { dlg.close(); if (suite) suite(); }, 1400);
 });
 
 /* ─────────────────────────── thème ────────────────────────────────────────
@@ -2530,9 +2556,355 @@ fcCase.onchange = () => {
          + (b.perils ? ", dont " + b.perils + " avec du travail qu'on peut perdre"
                      : "") + ".");
   }
+  majDecouv();
 };
 // L'aveu doit dire ce que montre l'onglet qu'on vient d'ouvrir, pas le précédent.
 majAveuFiltre();
+
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  CHERCHER LES PROJETS DU POSTE                                           ║
+   ╚══════════════════════════════════════════════════════════════════════════╝
+
+   LE BESOIN. L'écran d'accueil affiche une colonne par projet DÉCLARÉ dans
+   config.json. Rien, jusqu'ici, ne disait ce que ce fichier ignore : un dépôt
+   cloné il y a trois mois et jamais déclaré n'existait tout simplement pas pour
+   le board, et le seul moyen de l'y faire entrer était de taper son chemin à la
+   main dans le formulaire. L'adoption qui existait déjà (`majAdoption`) ne
+   comble pas ce trou : elle ne voit que les dossiers où une conversation est
+   DÉJÀ ouverte, c'est-à-dire ceux dont on se souvenait.
+
+   POURQUOI ÇA NE VIT QUE FILTRE ÉTEINT. « avec conversation » allumé, l'écran
+   assume de ne montrer qu'une partie des projets : y poser « en manque-t-il ? »
+   serait poser une question à laquelle l'écran vient lui-même de répondre non.
+   Éteint, l'écran prétend montrer TOUT — c'est le seul état où l'exhaustivité
+   est une promesse, donc le seul où elle peut être prise en défaut.
+
+   TROIS GESTES, ET PAS UN DE MOINS.
+     1. autoriser  — un panneau dit ce qui sera lu, la recherche attend ;
+     2. choisir    — une ligne de la liste ouvre le formulaire pré-rempli ;
+     3. valider    — c'est le formulaire d'adoption ordinaire qui écrit.
+   Aucun de ces gestes n'est mémorisé d'un chargement à l'autre. */
+
+const dcSection = $("#decouv"), dcBouton = $("#dc-go"), dcMot = $("#dc-mot"),
+      dcJauge = $("#dc-jauge"), dcDegrade = $("#dc-degrade"), dcListe = $("#dc-liste");
+const dlgAutor = $("#autorisation");
+
+/* L'AUTORISATION EST UNE VARIABLE DE MODULE, ET C'EST TOUT L'ENJEU. Ni
+   localStorage, ni sessionStorage, ni cookie, ni /api/layout : recharger la page
+   la remet à faux, et c'est voulu. La doctrine d'`avecConv` refuse déjà de
+   mémoriser une préférence d'AFFICHAGE ; une autorisation de LECTURE DU DISQUE
+   qui se réveillerait toute seule serait la même faute d'un cran plus haut.
+   Une fois par chargement de page, c'est un clic — pas zéro. */
+let dcAutorise = false;
+let dcEnCours = false;        // verrou : le bouton est désactivé, le drapeau double
+let dcReleve = null;          // dernier relevé : {candidats, scannes, duree_ms, degrade}
+let dcEchec = "";             // phrase d'échec en cours, vide sinon
+let dcRendreFocus = null;     // à qui rendre le focus quand le panneau se ferme
+
+/* Le nombre de dossiers parcourus se compte en milliers : sans séparateur il se
+   lit mal, et `4213` a l'air d'un identifiant. La durée reste en secondes à une
+   décimale — « 2900 ms » ne dit rien à personne. */
+function dcNombre(n) {
+  return Number.isFinite(n) ? Number(n).toLocaleString("fr-FR") : "?";
+}
+function dcDuree(ms) {
+  return Number.isFinite(ms) ? (ms / 1000).toFixed(1).replace(".", ",") + " s" : "?";
+}
+function dcReleveMot(r) {
+  return dcNombre(r.scannes) + " dossiers parcourus en " + dcDuree(r.duree_ms);
+}
+// Un horodatage de commit ne sert ici qu'à trier l'utile du dormant : la date
+// suffit, l'heure serait du bruit. Absent ou aberrant, on n'écrit rien plutôt
+// que d'inventer un « jamais » que le serveur n'a pas dit.
+function dcDate(epoch) {
+  if (!Number.isFinite(epoch) || epoch <= 0) return "";
+  const d = new Date(epoch * 1000);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("fr-FR", { day:"numeric", month:"short", year:"numeric" });
+}
+
+/* ── QUI DÉCIDE DE LA VISIBILITÉ DE LA BANDE ──────────────────────────────────
+   Un seul endroit, appelé par les trois choses qui peuvent la changer : la
+   bascule du filtre, le changement d'onglet, et le chargement. La bande est un
+   frère de `#board` dans le flux, pas un enfant : sans cette fonction elle
+   resterait affichée au-dessus du panneau Pull Requests. */
+function majDecouv() {
+  const montrer = ongletActif === "board" && !avecConv;
+  dcSection.hidden = !montrer;
+  if (montrer) rendDecouv();
+  else majHauteurDecouv();
+}
+
+/* ── L'AVIS NE DOIT PAS RECOUVRIR LA LISTE QU'IL ANNONCE ──────────────────────
+   `#avis` est un toast `position:fixed; bottom:56px` — 56 px, la hauteur du pied
+   de page, seule chose qui vivait sous lui. La bande s'installe entre les deux :
+   sans cette mesure, « Recherche terminée — 4 projets trouvés » se posait
+   exactement sur les quatre lignes trouvées, et pour six secondes. On publie la
+   hauteur OCCUPÉE (boîte + marge basse de 12 px), que board.css ajoute au
+   décalage du toast ; zéro quand la bande est masquée, donc rien ne change sur
+   les autres onglets ni filtre allumé.
+
+   `getBoundingClientRect` force un calcul de mise en page, et c'est justement ce
+   qu'on veut : la valeur doit être celle d'APRÈS le rendu de la liste, pas celle
+   d'avant. Il n'est appelé qu'aux quatre moments où la bande change de taille —
+   bascule du filtre, changement d'onglet, relevé, adoption — jamais au rythme du
+   flux. */
+function majHauteurDecouv() {
+  const h = dcSection.hidden || !dcSection.getBoundingClientRect ? 0
+          : Math.round(dcSection.getBoundingClientRect().height) + 12;
+  document.documentElement.style.setProperty("--dc-h", h + "px");
+}
+
+function rendDecouv() { peindreDecouv(); majHauteurDecouv(); }
+
+function peindreDecouv() {
+  attr(dcSection, "aria-busy", dcEnCours ? "true" : null);
+  dcJauge.hidden = !dcEnCours;
+  dcBouton.disabled = dcEnCours;
+
+  if (dcEnCours) {
+    texte(dcBouton, "recherche en cours…");
+    texte(dcMot, "parcours du répertoire personnel — quelques secondes.");
+    dcDegrade.hidden = true;
+    return;
+  }
+  // Le libellé dit ce que le clic FERA, et il change quand ce n'est plus la
+  // même chose : le premier clic ouvre le panneau d'autorisation, les suivants
+  // rebalaient directement — l'accord donné vaut pour toute la page.
+  texte(dcBouton, dcReleve || dcEchec ? "chercher à nouveau" : "chercher les projets du poste");
+  attr(dcBouton, "title", dcAutorise
+    ? "Reparcourir le répertoire personnel à la recherche de dépôts git non déclarés. "
+      + "L'autorisation déjà donnée vaut pour cette page."
+    : "Parcourir le répertoire personnel à la recherche de dépôts git non déclarés. "
+      + "Un panneau dira d'abord ce qui sera lu ; rien n'est parcouru sans ton accord.");
+
+  if (dcEchec) {
+    texte(dcMot, dcEchec);
+    classe(dcMot, "mauvais", true);
+    dcDegrade.hidden = true;
+    dcListe.textContent = "";
+    return;
+  }
+  classe(dcMot, "mauvais", false);
+
+  if (!dcReleve) {
+    texte(dcMot, "Le board ne connaît que les projets déclarés. "
+               + "S'il en manque, cette recherche les repère sur le poste.");
+    dcDegrade.hidden = true;
+    dcListe.textContent = "";
+    return;
+  }
+
+  /* `degrade` NE SE TAIT PAS. Le serveur l'envoie quand des dossiers n'ont pas
+     pu être lus : la liste est alors une liste PARTIELLE, et une liste partielle
+     présentée comme complète ferait conclure « il ne manque rien » à qui il
+     manque quelque chose. C'est le même interdit que l'instantané aveugle du
+     filtre : on n'affirme pas sur une ignorance. */
+  const deg = typeof dcReleve.degrade === "string" ? dcReleve.degrade.trim() : "";
+  dcDegrade.hidden = !deg;
+  if (deg) {
+    /* Le ⚠ est un DOUBLON VISUEL des mots qui le suivent, comme le ⚠ de l'aveu
+       du chrome : « Liste incomplète » est déjà écrit juste à côté, en toutes
+       lettres. On le sort donc de l'arbre d'accessibilité plutôt que de faire
+       annoncer « symbole attention, liste incomplète ». La phrase du serveur
+       arrive en textContent, jamais en innerHTML — c'est du texte qu'on relaie,
+       pas du balisage qu'on exécute. */
+    dcDegrade.textContent = "";
+    const g = el("b", "dc-alerte", "⚠");
+    attr(g, "aria-hidden", "true");
+    dcDegrade.append(g, document.createTextNode(" Liste incomplète — " + deg));
+  }
+
+  const cands = Array.isArray(dcReleve.candidats) ? dcReleve.candidats : [];
+  if (!cands.length) {
+    /* LE VIDE EST UNE BONNE NOUVELLE, et il faut le dire, sinon il se lit comme
+       une panne. Zéro candidat ne veut pas dire « rien trouvé » : ça veut dire
+       que tout ce que le poste porte comme dépôt git est déjà sur le board. */
+    texte(dcMot, deg
+      ? "Aucun projet à ajouter parmi ce qui a pu être lu — " + dcReleveMot(dcReleve)
+        + ". Ce qui manque à la liste ci-dessus n'a pas été examiné."
+      : "Rien à ajouter, et c'est la bonne réponse : " + dcReleveMot(dcReleve)
+        + ", et pas un dépôt git qui ne soit déjà déclaré. Le board est complet.");
+    dcListe.textContent = "";
+    return;
+  }
+
+  texte(dcMot, pluriel(cands.length, "projet trouvé", "projets trouvés")
+             + " que le board ne connaît pas · " + dcReleveMot(dcReleve)
+             + ". Chaque ligne ouvre le formulaire — rien n'est ajouté sans ta validation.");
+
+  /* Rendu complet de la liste, et pas de réconciliation par clé : elle ne change
+     qu'à un relevé ou à une adoption, jamais au rythme du flux. Le seul focus
+     qui vive ici est celui d'une ligne, et c'est `dcRetirer` qui le déplace —
+     ce rendu-là n'est jamais déclenché sous les doigts de l'utilisateur. */
+  dcListe.textContent = "";
+  for (const c of cands) {
+    const nom = String(c.name || ""), racine = String(c.root || "");
+    const court = String(c.root_court || racine);
+    const b = el("button", "dc-l");
+    b.type = "button";
+    b.dataset.root = racine;
+    const bas = [];
+    if (c.depot) bas.push(String(c.depot));
+    const d = dcDate(c.dernier_commit_at);
+    if (d) bas.push("dernier commit " + d);
+    b.append(el("b", null, "+ " + nom), el("span", null, court));
+    if (bas.length) b.append(el("em", null, bas.join(" · ")));
+    attr(b, "title", `Adopter « ${court} » comme projet : une colonne à lui, sa `
+      + `couleur, et un lanceur claude-${nom.toLowerCase()}. Le formulaire s'ouvre `
+      + `pré-rempli — tu peux corriger le nom avant de valider.`);
+    b.onclick = () => ouvrirFormProjet(nom, racine, () => dcRetirer(racine));
+    dcListe.append(b);
+  }
+}
+
+/* Une ligne adoptée quitte la liste — sinon elle proposerait d'adopter deux fois
+   le même dossier, et le second essai échouerait sur un doublon côté serveur.
+   Le board, lui, se met à jour tout seul : le prochain instantané SSE porte la
+   nouvelle colonne. On ne rebalaie pas le disque pour ça.
+
+   LE FOCUS NE TOMBE PAS. Le bouton qu'on retire est celui qui avait ouvert le
+   formulaire, donc celui à qui `close()` vient de rendre la main : le supprimer
+   sans rien faire renverrait le focus sur <body> et perdrait la place au clavier
+   (WCAG 2.4.3). On le donne à la ligne suivante, sinon à la précédente, sinon au
+   bouton de recherche — qui, lui, ne disparaît jamais. */
+function dcRetirer(racine) {
+  if (!dcReleve || !Array.isArray(dcReleve.candidats)) return;
+  const lignes = [...dcListe.children];
+  const i = lignes.findIndex(n => n.dataset && n.dataset.root === racine);
+  dcReleve.candidats = dcReleve.candidats.filter(c => String(c.root || "") !== racine);
+  const suivant = i < 0 ? null : (lignes[i + 1] || lignes[i - 1] || null);
+  const cible = suivant && suivant.dataset ? suivant.dataset.root : null;
+  rendDecouv();
+  const rendu = cible
+    ? [...dcListe.children].find(n => n.dataset && n.dataset.root === cible)
+    : null;
+  (rendu || dcBouton).focus();
+}
+
+/* ── LE BALAYAGE ──────────────────────────────────────────────────────────────
+   `autorise=1` n'est pas décoratif : sans lui le serveur ne parcourt rien et
+   répond un refus. Le paramètre est donc la TRACE du consentement dans la
+   requête elle-même, et il n'est jamais posé ailleurs qu'ici, derrière le
+   drapeau que seul le panneau d'autorisation lève.
+
+   L'ÉCHEC EST TRAITÉ AVANT LE SUCCÈS, et il a plusieurs formes. La route peut
+   ne pas exister du tout — c'est le cas sur un serveur plus ancien, qui répond
+   404 avec du JSON : l'écran doit le dire, pas se figer sur « recherche en
+   cours ». Le serveur peut refuser. Le réseau peut tomber. Et la réponse peut
+   être bien formée mais sans `candidats` : on ne devine pas, on avoue. */
+async function dcChercher() {
+  if (dcEnCours || !dcAutorise) return;
+  dcEnCours = true; dcEchec = "";
+  rendDecouv();
+  avis("<b>Recherche en cours</b> — parcours du répertoire personnel à la "
+       + "recherche de dépôts git. Quelques secondes.");
+
+  // Un balayage qui n'aboutit jamais laisserait le bouton désactivé pour de bon,
+  // sans aucun moyen de réessayer : la minute est large pour un relevé mesuré à
+  // trois secondes, et elle rend toujours la main.
+  const stop = new AbortController();
+  const minuteur = setTimeout(() => stop.abort(), 60000);
+  let d = null;
+  try {
+    const rep = await fetch("/api/decouverte?autorise=1", { signal: stop.signal });
+    if (!rep.ok) {
+      dcEchec = rep.status === 404
+        ? "Cette version du serveur ne sait pas chercher les projets du poste. "
+          + "Rien n'a été parcouru."
+        : "Le serveur a refusé la recherche (code " + rep.status + "). "
+          + "Rien n'a été parcouru.";
+    } else {
+      d = await rep.json();
+    }
+  } catch (e) {
+    dcEchec = e && e.name === "AbortError"
+      ? "La recherche n'a pas répondu en une minute — elle a été interrompue. "
+        + "Rien n'a été ajouté."
+      : "Serveur injoignable — la recherche n'a pas eu lieu.";
+  }
+  clearTimeout(minuteur);
+
+  if (d && !Array.isArray(d.candidats)) {
+    // Réponse bien formée mais sans liste : c'est un refus, et le serveur en
+    // donne parfois la raison. On la relaie telle quelle — en texte, jamais en
+    // HTML : cette phrase vient du serveur et n'a rien à faire dans un innerHTML.
+    const raison = typeof d.erreur === "string" ? d.erreur
+                 : typeof d.message === "string" ? d.message : "";
+    dcEchec = "La recherche n'a pas eu lieu" + (raison ? " — " + raison : ".") ;
+    d = null;
+  }
+  if (d) { dcReleve = d; dcEchec = ""; }
+
+  dcEnCours = false;
+  rendDecouv();
+
+  /* L'ARRIVÉE DE LA LISTE S'ANNONCE, et par `#avis` — la région live permanente
+     de l'écran, dont la correction d'arbre d'accessibilité est mesurée au-dessus
+     de `avis()`. En ouvrir une seconde ici ferait deux régions concurrentes pour
+     un même écran, et rien ne garantirait laquelle parle en premier.
+     Aucun nom de projet, aucune phrase du serveur n'entre dans `avis()`, qui
+     écrit en innerHTML : les noms vivent dans la liste, en textContent. */
+  if (dcEchec) {
+    avis("<b>Recherche impossible</b> — rien n'a été parcouru. "
+         + "Le détail est écrit sous les colonnes.");
+  } else {
+    const n = dcReleve.candidats.length;
+    const deg = typeof dcReleve.degrade === "string" && dcReleve.degrade.trim();
+    avis("<b>Recherche terminée</b> — "
+         + (n ? pluriel(n, "projet trouvé", "projets trouvés")
+                + " que le board ne connaît pas, sous les colonnes."
+              : "aucun projet à ajouter : tous les dépôts git du poste sont déjà déclarés.")
+         + (deg ? " La liste est incomplète : des dossiers n'ont pas pu être lus."
+                : ""));
+  }
+}
+
+/* ── LE PANNEAU D'AUTORISATION ────────────────────────────────────────────────
+   `showModal()` porte le rôle, le piège à focus et l'inertie de la page. Ce qui
+   reste à écrire tient en deux gestes que le natif ne fait pas à notre place :
+   poser le focus D'ENTRÉE sur le dialogue (et non sur un bouton, qu'Entrée
+   armerait), et le rendre à l'appelant à la sortie. La restitution de focus par
+   `close()` existe dans les navigateurs récents, mais elle vise « l'élément
+   précédemment focalisé », pas « le bouton qui a ouvert » — sur un panneau
+   ouvert au clavier depuis une ligne qui n'existe plus, ce n'est pas la même
+   chose. On la fait donc explicitement, et une seule fois. */
+function ouvrirAutorisation() {
+  dcRendreFocus = document.activeElement;
+  dlgAutor.showModal();
+  dlgAutor.focus();
+}
+function fermerAutorisation() {
+  if (dlgAutor.open) dlgAutor.close();
+}
+// `close` est le SEUL point de sortie : il couvre le bouton Annuler, Échap
+// (l'événement `cancel` natif ferme), le clic sur le fond et la validation.
+dlgAutor.addEventListener("close", () => {
+  const cible = dcRendreFocus;
+  dcRendreFocus = null;
+  if (cible && cible.isConnected && typeof cible.focus === "function") cible.focus();
+});
+dlgAutor.addEventListener("click", ev => { if (ev.target === dlgAutor) dlgAutor.close(); });
+$("#au-annuler").onclick = () => fermerAutorisation();
+$("#au-ok").onclick = () => {
+  dcAutorise = true;
+  fermerAutorisation();
+  dcChercher();
+};
+
+dcBouton.onclick = () => {
+  if (dcEnCours) return;
+  if (!dcAutorise) { ouvrirAutorisation(); return; }
+  dcChercher();
+};
+
+/* La grille de candidats se recompose en changeant de largeur (auto-fill), donc
+   la bande change de hauteur sans qu'aucun de nos rendus soit passé. Même idiome
+   que la plaque des onglets, plus bas dans ce fichier. */
+if (window.ResizeObserver) new ResizeObserver(majHauteurDecouv).observe(dcSection);
+
+majDecouv();
 
 
 /* ═══════════════════ fiche d'une conversation ════════════════════════════

@@ -44,6 +44,10 @@ try:
 except Exception:
     chantier = None
 try:
+    import decouverte
+except Exception:
+    decouverte = None
+try:
     import attente as file_attente
 except Exception:
     file_attente = None
@@ -1411,6 +1415,31 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._envoyer(200, {"groupes": [], "total": 0, "a_traiter": 0,
                                            "degrade": "erreur du module PR : %s" % e})
+        if route == "/api/decouverte":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            # L'AUTORISATION SE VÉRIFIE ICI, ET NULLE PART AILLEURS. La
+            # découverte est la seule lecture du serveur qui sorte des projets
+            # déclarés — elle parcourt tout `~` —, et l'utilisateur a demandé à
+            # en garder la main. Une garde côté client ne serait qu'une
+            # convention : un onglet resté ouvert sur une ancienne version du
+            # JS, un `curl`, un lien partagé la contourneraient. Le refus est
+            # donc rendu AVANT le moindre appel au module : pas une lecture de
+            # dossier n'a lieu sans `autorise=1`.
+            if (q.get("autorise") or [""])[0] != "1":
+                return self._envoyer(403, {
+                    "erreur": "découverte non autorisée : appelez "
+                              "/api/decouverte?autorise=1"})
+            if decouverte is None:
+                return self._envoyer(200, {"candidats": [], "scannes": 0,
+                                           "illisibles": 0, "duree_ms": 0,
+                                           "degrade": "module Découverte absent"})
+            try:
+                return self._envoyer(200, decouverte.scan(BOARD.cfg))
+            except Exception as e:
+                return self._envoyer(200, {
+                    "candidats": [], "scannes": 0, "illisibles": 0, "duree_ms": 0,
+                    "degrade": "erreur du module Découverte : %s" % e})
         # les polices vivent dans board/fonts/ : un seul sous-dossier autorisé,
         # et _statique() vérifie de toute façon qu'on ne sort pas de board/
         if route.startswith("/fonts/") and route.count("/") == 2:
@@ -1496,6 +1525,7 @@ def main():
                              ("pullrequests", pullrequests),
                              ("attente", file_attente),
                              ("chantier", chantier),
+                             ("decouverte", decouverte),
                              ("peindre", peindre),
                              ("conversation", conversation),
                              ("rouvrir", rouvrir_conv)) if m is None]

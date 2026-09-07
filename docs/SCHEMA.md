@@ -277,6 +277,101 @@ board au repos — publie le motif, et refuse trois choses :
 au plus une fois par minute (`serveur.plainte`) — la boucle SSE repasse ici
 chaque seconde.
 
+## `GET /api/decouverte?autorise=1` — les projets du poste, proposés
+
+`candidats_projets` ci-dessus ne voit que ce que l'historique lui montre : un
+projet non déclaré n'y apparaît que si une conversation y a déjà tourné.
+`decouverte.scan(config, racine=None)` répond à l'autre moitié du besoin — les
+dépôts git présents sur le disque, qu'une conversation les ait visités ou non.
+
+    {
+      "candidats": [
+        {"name": "UI-COMMUNE",        nom deviné par `serveur._nom_devine`
+         "root": "/Users/…/Documents/Projets_Perso/ui-commune",
+         "root_court": "~/Documents/Projets_Perso/ui-commune",
+         "depot": "ui-commune",       basename du dépôt, tel qu'il est sur le disque
+         "dernier_commit_at": 1756900000,   mtime de `.git/HEAD`, ou null
+         "collision": null}           nom déjà déclaré dans config.json, ou null
+      ],
+      "scannes": 412,                 dossiers VISITÉS, pas entrées lues
+      "illisibles": 0,                sautés faute de droits — un ENTIER
+      "duree_ms": 2900,
+      "degrade": null                 null = relevé complet ; sinon, le motif
+    }
+
+Les six clés d'un candidat sont TOUJOURS là, les cinq du relevé aussi. `null` y
+est une affirmation (« aucune collision », « date inconnue », « j'ai tout lu »),
+pas une clé oubliée — même règle que `sessions_indisponibles`.
+
+### Les trois choses qui ne se devinent pas
+
+**`autorise=1` est obligatoire.** Sans lui, la route répond `403` et
+**aucun dossier n'est lu** : le module n'est même pas appelé. Le balayage est la
+seule lecture du serveur qui sorte des projets déclarés, l'utilisateur a demandé
+à en garder la main, et cette main se vérifie côté serveur — une garde côté
+client ne serait qu'une convention, qu'un `curl` ou un onglet resté ouvert sur
+une ancienne version du JS contournerait.
+
+**La découverte n'écrit RIEN.** Ni config.json, ni cache, ni fichier de
+marquage, et elle ne mute pas la `config` qu'on lui passe. Elle PROPOSE ;
+l'adoption est un second geste, humain, et `POST /api/projet` reste le seul
+écrivain de `config.projects`.
+
+**La liste est ordonnée par récence**, et cet ordre est un contrat :
+`dernier_commit_at` décroissant, les dates inconnues en dernier, puis `name`
+croissant à égalité. Ce qu'on a touché récemment se propose en premier — c'est
+ce qui rend la liste utile plutôt qu'alphabétique.
+
+### Ce qu'on ne propose pas, et pourquoi
+
+    · ce qui est déjà couvert par une racine déclarée — la racine elle-même ET
+      tout ce qui vit dessous, une racine pouvant valoir
+      `~/Documents/Projets_Perso` en entier ;
+    · le répertoire personnel lui-même — il porte souvent un `.git` de
+      dotfiles, et « UTILISATEUR » n'est pas un projet ;
+    · tout dossier caché, à quelque profondeur que ce soit, `node_modules`,
+      `~/Library` et `~/.Trash` — sans ces exclusions le balayage remonte
+      `~/.codex/.tmp/…`, `~/.islands-dark-temp` et
+      `~/.local/share/ruby-advisory-db`, les trois faux positifs mesurés ;
+    · ce qui vit DANS un dépôt trouvé — un dépôt arrête la descente, sinon
+      `antomappat` et `antomappat/antomappat-front` seraient proposés tous les
+      deux et l'utilisateur devrait deviner lequel adopter ;
+    · un dossier dont `_nom_devine` ne tire aucun nom recevable — proposer un
+      candidat que le formulaire d'adoption refusera est une impasse.
+
+Les liens symboliques ne sont **jamais** suivis : un lien vers `~` ou vers un
+parent ferait boucler la descente, et un lien vers un dossier déjà balayé le
+proposerait deux fois sous deux chemins.
+
+### Les bornes, et ce qu'elles obligent à dire
+
+Deux bornes, `PROFONDEUR_MAX = 8` et `BUDGET_S = 10`. Mesures sur ce poste :
+`~` complet = 2,9 s pour 16 dépôts ; borné à 6 niveaux = 0,42 s pour 15. La
+profondeur protège d'une arborescence pathologique, le budget d'un disque lent
+ou d'un montage réseau — cas où aucune profondeur ne borne le temps.
+
+Une borne atteinte se DIT dans `degrade` (« balayage interrompu … ») : rendre
+une liste tronquée avec `degrade` à `null` la ferait passer pour exhaustive.
+
+`illisibles` est un entier À CÔTÉ de `degrade` : le client ne doit jamais avoir
+à parser une phrase pour obtenir un compte.
+
+### Un seul balayage à la fois — refusé, pas mis en file
+
+C'est l'opération la plus lente du serveur et elle tourne dans un thread de
+requête. Un appel concurrent est refusé sur-le-champ :
+
+    {"candidats": [], "scannes": 0, "illisibles": 0, "duree_ms": 0,
+     "degrade": "balayage déjà en cours : réessayez dans quelques secondes"}
+
+Le scénario n'est pas le polling — `autorise=1` implique un geste humain — mais
+l'impatience : trois secondes sans retour visuel, et l'utilisateur reclique. Dix
+parcours de `~` en parallèle s'écroulent ensemble, l'I/O disque ne se partageant
+pas. Et à la différence de `chantier.scan`, la découverte ne COALESCE pas
+(attendre le balayage en cours pour resservir son relevé) : le contrat de retour
+est fermé, il n'a pas de champ pour dire l'âge d'un relevé, donc un relevé
+resservi serait indiscernable d'un relevé frais.
+
 ## L'objet ARBRE — produit par `chantier.py`, consommé par l'onglet Chantier
 
 Deuxième structure que le board connaît, après l'SESSION. Servie par
