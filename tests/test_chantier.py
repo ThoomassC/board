@@ -435,5 +435,55 @@ class DedoublonnageDuForce(SocleChantier):
         self.assertEqual(groupes["Beta"]["conversations"], 0)
 
 
+class ProjetsNeufs(SocleChantier):
+    """`jamais_servi` — le projet adopté qu'aucune conversation n'a encore vu.
+
+    Le filtre « avec conversation » masquait un projet dès son adoption, lui
+    retirant la colonne qui porte le nom de son lanceur. Un projet adopté reste
+    donc visible jusqu'à sa première conversation. Le fait vit dans
+    `layout.json` (clé `neufs`, gardée par `test_neufs.py`) ; le SERVEUR le
+    descend jusqu'ici, et cet onglet le republie par groupe pour que le client
+    n'ait pas à joindre deux sources avant de décider s'il peut masquer.
+
+    Même règle que `conversations`, pour la même raison : le drapeau est DÉRIVÉ
+    à chaque appel et n'entre jamais dans le relevé mémorisé — celui-ci est
+    partagé par tous les appelants pendant 30 s, et un projet peut cesser
+    d'être neuf entre deux.
+    """
+
+    def _scanner_neufs(self, neufs, sessions=(), force=False):
+        return chantier.scan(CONFIG, sessions=list(sessions), neufs=neufs,
+                             force=force, us_de=lambda branche, cwd="": "")
+
+    def test_chaque_groupe_porte_le_drapeau_jamais_servi(self):
+        # Toujours présent, et faux par défaut : « pas neuf » est une valeur du
+        # contrat, pas l'absence d'une clé.
+        groupes = _par_projet(self._scanner([]))
+
+        self.assertIs(groupes["Alpha"]["jamais_servi"], False)
+        self.assertIs(groupes["Beta"]["jamais_servi"], False)
+
+    def test_le_drapeau_distingue_le_projet_neuf_des_autres(self):
+        groupes = _par_projet(self._scanner_neufs(["Beta"]))
+
+        self.assertIs(groupes["Beta"]["jamais_servi"], True)
+        self.assertIs(groupes["Alpha"]["jamais_servi"], False)
+
+    def test_le_drapeau_du_chemin_du_cache_est_celui_de_l_appel(self):
+        # Second appel servi par le relevé mémorisé (aucun rebalayage) : le
+        # drapeau doit être celui de CET appel.
+        #
+        # L'ORDRE DES DEUX APPELS EST LE TEST. Faux puis vrai — jamais
+        # l'inverse : un chemin de cache qui ignorerait `neufs` rendrait faux,
+        # et un drapeau rangé dans le relevé mémorisé rendrait le faux du
+        # premier appel. Les deux erreurs passent inaperçues dans l'autre sens.
+        self._scanner_neufs([])
+
+        groupes = _par_projet(self._scanner_neufs(["Beta"]))
+
+        self.assertEqual(self._balayages(), 1)
+        self.assertIs(groupes["Beta"]["jamais_servi"], True)
+
+
 if __name__ == "__main__":
     unittest.main()

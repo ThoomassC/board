@@ -1256,7 +1256,26 @@ a.att:hover{text-decoration:none}
   background:color-mix(in srgb,var(--sky) 14%,transparent);
   padding:4px 11px; border-radius:var(--r-jeton);
 }
+/* ── LA NOTE « projet neuf » ──────────────────────────────────────────────────
+   Elle répond à la seule question que pose cette colonne quand « avec
+   conversation » est allumé : pourquoi est-elle encore là ? board.js ne l'écrit
+   que dans ce cas précis (voir MOT_NEUF).
+   Elle se lit APRÈS le lanceur et pas avant — le lanceur est l'action, la note
+   est la raison — d'où le bloc et le filet, tiré de la même bordure pointillée
+   que le bloc lui-même pour qu'elle en fasse visiblement partie au lieu d'y
+   être posée. AUCUNE COULEUR D'ALERTE et aucun fond : ce n'est ni un
+   avertissement, ni une nouveauté à célébrer, c'est une note de bas de bloc. La
+   teinte est celle du bloc (--t3), donc son contraste est celui, déjà mesuré,
+   du texte qui l'entoure — une nuance en plus aurait été une mesure en plus. */
+.vide-col .vide-neuf{
+  display:block; margin:11px 0 0; padding:9px 2px 0;
+  border-top:1px dashed var(--edge-off);
+  font-size:11px; line-height:1.45; color:var(--t3);
+}
 .board.mode-XS .vide-col,.board.mode-S .vide-col{padding:12px 10px; font-size:11.5px}
+.board.mode-XS .vide-col .vide-neuf,.board.mode-S .vide-col .vide-neuf{
+  margin-top:9px; padding-top:7px; font-size:10.5px;
+}
 
 /* ═════════════════════ densités ══════════════════════════════════════════
    L'ORDRE DE SACRIFICE EST INVERSÉ, et c'était D2 de docs/AMELIORATIONS.md.

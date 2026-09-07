@@ -41,6 +41,46 @@ let ordreProjets = [];       // ordre COMPLET des colonnes, filtre ignoré : voi
      CHANTIER  un bloc par projet ayant des arbres de travail.
                Critère : `conversations === 0` dans /api/chantier.
 
+   LE PRÉDICAT EST LE MÊME DES DEUX CÔTÉS, à la source du compte près :
+
+     masquer  ⟺  filtre allumé  ET  aucune conversation  ET  !g.jamais_servi
+
+   ── `jamais_servi`, ET POURQUOI IL EXEMPTE ───────────────────────────────────
+   Le serveur pose ce booléen sur chaque groupe, TOUJOURS PRÉSENT, sur les DEUX
+   charges utiles — instantané SSE et /api/chantier. Il vaut `true` quand le
+   projet a été adopté et qu'aucune conversation Claude n'y a jamais tourné.
+   C'est un FAIT de cycle de vie : le serveur le publie, le client seul décide
+   d'en faire une raison de ne pas masquer.
+
+   Sans cette exemption, un projet adopté disparaissait DANS LA SECONDE : il n'a
+   par construction aucune conversation, et c'est précisément sa colonne vide qui
+   porte son lanceur `claude-<projet>`. Le filtre retirait donc la porte d'entrée
+   du projet qu'on venait d'ajouter — et la ligne ayant quitté la bande de
+   découverte, il ne restait plus rien à cliquer nulle part.
+
+   ELLE S'ÉTEINT SEULE, ET SANS RETOUR. Le serveur retire le projet de sa liste
+   `neufs` à la première conversation observée, définitivement : un projet ne
+   redevient pas neuf quand sa conversation s'arrête. Le client n'a donc aucun
+   état à tenir, aucune date à comparer — il lit le fait de l'instant.
+
+   DÉGRADATION FACE À UN SERVEUR MUET. Une version qui ne publie pas encore la
+   clé rend `undefined` : `!undefined` est vrai, le projet est masqué, soit
+   exactement le comportement d'avant ce lot. Ce n'est pas une entorse à « on ne
+   masque pas sur une ignorance » — l'ignorance qui protège porte sur le NOMBRE
+   de conversations, jamais sur l'exemption. Un serveur muet rend le filtre
+   d'avant, ni plus ni moins ; on ne renverse pas le sens du champ pour le cas
+   où il manque.
+
+   LE CHAMP S'APPELLE `jamais_servi`, PAS `neuf`. `neufs` est la liste persistée
+   côté serveur ; deux noms qui ne diffèrent que d'une lettre finale se
+   confondent tôt ou tard, et ce fichier s'est déjà fait prendre une fois avec
+   `convs` / `conversations`.
+
+   CE QUI EST GARDÉ À L'ÉCRAN SE DIT À L'ÉCRAN, comme ce qui en est retiré. Un
+   projet sans conversation, visible alors que le filtre est allumé, est une
+   surprise si rien ne l'explique : les deux écrans écrivent donc `MOT_NEUF` là
+   où l'exemption a joué — et seulement là. Voir `rendBoard` et `rendChantier`.
+
    DEUX DONNÉES DIFFÉRENTES, UN SEUL ÉTAT. Les deux critères ne viennent pas de
    la même source — l'instantané SSE d'un côté, un relevé git de l'autre — et
    peuvent donc ne pas masquer exactement les mêmes projets au même instant. Ça
@@ -71,6 +111,15 @@ const bilanFiltre = {
 
 function pluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
 
+/* CE QUE DIT UNE EXEMPTION, ÉCRIT UNE FOIS POUR LES DEUX ÉCRANS.
+   L'accueil le pose sous le lanceur de la colonne vide, le Chantier dans
+   l'en-tête du bloc de projet — deux endroits, une seule phrase, parce que deux
+   rédactions du même fait finiraient par se contredire. Elle est courte et
+   complète à la fois : ce que le projet EST (neuf), et jusqu'à QUAND il échappe
+   au filtre. Le mot « masqué » n'y figure pas : on explique une présence, pas
+   une absence. */
+const MOT_NEUF = "projet neuf — affiché jusqu'à sa première conversation";
+
 /* ── L'AVEU, ET LE TEXTE QUI LE PORTE AILLEURS QUE DANS UN `title` ────────────
    Trois publics, une seule rédaction : l'aveu visible à côté de l'interrupteur,
    son `title` pour la souris, et la description liée à la case pour le clavier
@@ -85,7 +134,16 @@ function texteFiltre(onglet) {
   let t = "Allumé, n'affiche que les projets où une conversation Claude "
         + "travaille en ce moment. Vaut pour l'onglet Conversations, qui masque "
         + "alors la colonne du projet, et pour l'onglet Chantier, qui masque son "
-        + "bloc d'arbres de travail.";
+        /* DEUX EXCEPTIONS, ET ELLES SONT ÉNONCÉES ENSEMBLE. Il n'y en avait
+           qu'une — l'ignorance du serveur — et elle était écrite ici seule ;
+           l'exemption des projets neufs en fait une deuxième. Les dire dans la
+           même phrase est la seule façon d'empêcher qu'une correction n'en
+           corrige qu'une : ce texte sert à la fois l'infobulle de l'aveu et la
+           description liée à la case (#fc-desc). */
+        + "bloc d'arbres de travail. Deux exceptions : un projet qu'on vient "
+        + "d'adopter reste affiché jusqu'à sa première conversation, et rien "
+        + "n'est masqué tant que le serveur ne sait pas quelles conversations "
+        + "tournent.";
   if (b.inconnu) {
     /* L'IGNORANCE NE MASQUE RIEN, et c'est le cas qui compte le plus.
        Côté accueil, un instantané AVEUGLE (`sessions_indisponibles`) publie
@@ -723,9 +781,19 @@ function rendBoard(snap) {
      ne dit rien et part comme les autres ; mais c'est la SEULE colonne où
      peuvent apparaître les dossiers non déclarés à adopter (`majAdoption`), et
      ce bloc-là n'est pas une conversation : c'est une action qui n'a aucun
-     autre endroit où vivre. */
+     autre endroit où vivre.
+
+     UN PROJET NEUF EST ÉPARGNÉ AUSSI, et c'est le même raisonnement d'un cran
+     plus loin. `g.jamais_servi` dit que le projet a été adopté et qu'aucune
+     conversation n'y a jamais tourné ; sa colonne n'a donc rien à montrer, mais
+     elle porte son lanceur `claude-<projet>` — la seule porte d'entrée du
+     projet qu'on vient d'ajouter. Le filtre la retirait aussitôt. La doctrine
+     complète, dégradation comprise, est en tête de fichier avec `avecConv` ;
+     ici on lit le fait, sans le retourner : absent ou faux, le projet est
+     masqué comme avant. */
   const aveugle = !!snap.sessions_indisponibles;
-  const actif = g => (g.sessions || []).length > 0
+  const occupe = g => (g.sessions || []).length > 0;
+  const actif = g => occupe(g) || !!g.jamais_servi
                   || (g.project === snap.fallback && (snap.candidats || []).length > 0);
   const filtre = avecConv && !aveugle;
   const groupes = filtre ? tous.filter(actif) : tous;
@@ -839,6 +907,24 @@ function rendBoard(snap) {
         vide.append(document.createTextNode("Aucune conversation ouverte"),
                     el("code", null, "claude-" + g.project.toLowerCase()));
         hote.append(vide);
+      }
+      /* ── POURQUOI CETTE COLONNE EST LÀ ALORS QUE LE FILTRE EST ALLUMÉ ──────
+         La note n'apparaît QUE quand l'exemption a réellement joué : filtre
+         allumé, aucune conversation, `jamais_servi`. Filtre éteint, tout est
+         affiché et il n'y a aucune surprise à expliquer — la note serait du
+         bruit sur chaque colonne vide. C'est la contrepartie exacte du compteur
+         du bandeau : lui dit ce que l'écran a retiré, elle dit ce qu'il a gardé
+         et pourquoi.
+         Elle est RÉCONCILIÉE à chaque rendu, jamais posée une fois pour toutes
+         (`dataset.neuf` en signature) : le fait change sous nos yeux, à la
+         première conversation du projet et à chaque bascule de l'interrupteur,
+         et une phrase qui survivrait à sa raison serait un mensonge. */
+      const exempte = filtre && !!g.jamais_servi;
+      if (vide.dataset.neuf !== String(exempte)) {
+        vide.dataset.neuf = String(exempte);
+        const ancienne = $(".vide-neuf", vide);
+        if (ancienne) ancienne.remove();
+        if (exempte) vide.append(el("span", "vide-neuf", MOT_NEUF));
       }
       vide.style.order = "9999";
     } else if (vide) {
@@ -1385,32 +1471,37 @@ const chVus = new Set();         // dépôts déjà vus : le repli PAR DÉFAUT n
    avec lui ; elle n'a pas sa place ici depuis qu'il ne s'applique plus qu'à cet
    onglet. */
 
-/* CE QUI EMPÊCHE UN PROJET DE PARTIR EN SILENCE : IL NE PART PAS.
-   Première version de ce filtre : on masquait un projet sans conversation, puis
-   on AVERTISSAIT en ambre s'il contenait du travail en péril. Un avertissement
-   est un pis-aller — il demande d'être lu, d'être compris, et d'être suivi d'un
-   geste (rallumer le filtre) pour retrouver ce qu'on vient de cacher. Il ne
-   protégeait rien : il documentait la perte.
+/* CE QUI PART EN SILENCE NE PART PAS EN SILENCE : ON LE NOMME.
+   Cette fonction ne décide plus rien — elle DÉNONCE. Il faut le savoir avant de
+   la lire, parce qu'elle a eu les deux rôles coup sur coup :
 
-   Désormais l'exception est STRUCTURELLE. Un projet qui porte du travail en
-   péril n'est jamais masqué, point. Le prédicat complet est plus haut, dans
-   `rendChantier` :
+     1. le compteur ambre. On masquait un projet sans conversation, puis on
+        AVERTISSAIT s'il contenait du travail en péril.
+     2. l'exemption. `... ET aucun arbre en péril` était une troisième condition
+        du prédicat : un projet portant du travail non commité ne partait jamais.
+        Retirée à la demande explicite de l'utilisateur, après l'avoir vue à
+        l'œuvre — elle gardait à l'écran un projet sans aucune conversation,
+        c'est-à-dire exactement ce que l'interrupteur existe pour retirer, et le
+        rendait infidèle à son libellé.
+     3. le compteur ambre, de nouveau, et c'est l'état actuel.
 
-     masquer  ⟺  filtre allumé  ET  conversations === 0  ET  aucun arbre en péril
+   Le prédicat qui décide, lui, est écrit une seule fois, dans `rendChantier` :
 
-   Ce que ça change, et c'est le fond du sujet : la doctrine de repli juste
-   au-dessus interdit de faire disparaître au chargement « un dépôt qui contient
-   du travail non commité frais ». Tant que le filtre pouvait masquer un tel
-   projet, il reproduisait exactement le pire cas que cette doctrine nomme, en
-   pire (un projet entier, pas un pli), et se contentait de l'avouer à côté.
-   Il ne le peut PLUS : le filtre est devenu incapable de produire ce cas. Une
-   propriété est plus forte qu'un avertissement — et elle ne coûte rien à lire.
+     masquer ⟺ filtre allumé ET conversations === 0 ET !g.jamais_servi
 
-   Conséquence assumée : le compteur ambre « N masqués demandent un geste » a été
-   supprimé, en JS comme en CSS. Il compterait toujours zéro par construction, et
-   un jeton qui ne s'allume jamais est du bruit dans une barre qui déborde déjà.
-   Le compteur « N projets masqués », lui, RESTE : il dit ce que l'écran ne
-   montre pas, et ça, aucune propriété structurelle ne le rend inutile.
+   La seule exemption survivante n'a rien à voir avec le péril : elle garde à
+   l'écran un projet qu'on vient d'adopter, dont le bloc est la seule porte
+   d'entrée, et elle expire d'elle-même à sa première conversation. Sa doctrine
+   est en tête de fichier, avec `avecConv`.
+
+   CE QUE LE RETRAIT DE L'EXEMPTION COÛTE, ET COMMENT IL EST PAYÉ. Le filtre est
+   redevenu capable de masquer un dépôt contenant du travail non commité — le
+   pire cas que nomme la doctrine de repli juste au-dessus. Le compteur
+   « N projets masqués » du bandeau porte donc, en ambre, le nombre de projets
+   masqués qui contiennent du travail qu'on peut perdre, et les nomme ; l'état
+   vide du panneau le répète. Rien ne disparaît en silence : ce qui disparaît,
+   l'écran le dit. C'est un avertissement, pas une propriété — on sait ce que ça
+   vaut, et c'est ce qui a été demandé.
 
    CE QUI COMPTE COMME « EN PÉRIL ».
    Trois faits du contrat de données, lus dans docs/SCHEMA.md et dans
@@ -1641,7 +1732,10 @@ function rendChantier(d) {
       .map(dep => ({ ...dep, count: dep.arbres.length }));
     if (!depots.length) continue;
     const arbres = depots.flatMap(dep => dep.arbres);
-    /* LE PRÉDICAT DE MASQUAGE — `avecConv` ET `g.conversations === 0`.
+    /* LE PRÉDICAT DE MASQUAGE — TROIS CONDITIONS, ET PAS DEUX :
+
+         masquer ⟺ `avecConv` ET `g.conversations === 0` ET `!g.jamais_servi`
+
        `avecConv` est l'état GLOBAL du chrome (voir sa doctrine en tête de
        fichier) : cet onglet ne possède plus son interrupteur, il obéit à celui
        de la barre du haut, qui gouverne aussi l'écran d'accueil.
@@ -1666,14 +1760,29 @@ function rendChantier(d) {
            c'est-à-dire une ignorance, c'est-à-dire zéro projet masqué : la
            dégradation va dans le sens sûr.
 
-       ET RIEN D'AUTRE. Il y avait une seconde condition — « aucun arbre du
+       `!g.jamais_servi` — LA SEULE EXEMPTION QUI RESTE. Le serveur pose ce
+           booléen sur chaque groupe de /api/chantier comme sur chaque groupe de
+           l'instantané SSE : « adopté, et aucune conversation n'y a jamais
+           tourné ». Un projet dans cet état n'a par construction aucune
+           conversation ; le masquer, c'est le faire disparaître à la seconde où
+           on l'ajoute. La doctrine complète — pourquoi l'exemption existe,
+           pourquoi elle s'éteint seule et sans retour, ce que rend un serveur
+           qui ne publie pas encore la clé (`undefined`, donc masqué, donc le
+           comportement d'avant) — est en tête de fichier, avec `avecConv`.
+           Ici, une seule chose à retenir : on lit le fait, on ne l'invente pas,
+           et l'absence du champ ne change rien à ce que faisait l'écran hier.
+
+       ET RIEN D'AUTRE. Il y avait une autre condition — « aucun arbre du
        groupe n'est en péril » — qui exemptait de masquage tout projet portant
        du travail non commité. Elle a été RETIRÉE sur demande explicite de
        l'utilisateur, redemandée après l'avoir vue à l'œuvre : elle gardait à
        l'écran un projet sans aucune conversation, ce qui est exactement ce que
        cet interrupteur existe pour retirer. Une protection qu'on n'a pas
        demandée et qui rend le contrôle infidèle à son libellé n'est pas une
-       protection, c'est une surprise.
+       protection, c'est une surprise. L'exemption des projets neufs, elle, est
+       d'une autre nature : elle ne garde pas un projet « au cas où », elle
+       garde le SEUL chemin qui mène à un projet qu'on vient de créer, et elle
+       expire d'elle-même au premier usage.
 
        CE QUE CE RETRAIT COÛTE, ET COMMENT IL EST PAYÉ. Le filtre redevient
        capable de masquer un dépôt contenant du travail non commité — le pire
@@ -1683,8 +1792,12 @@ function rendChantier(d) {
        contiennent du travail qu'on peut perdre, et les nomme. Rien ne disparaît
        en silence : ce qui disparaît, l'écran le dit. */
     const inconnu = typeof g.conversations !== "number";
-    const masque = avecConv && g.conversations === 0;
+    const masque = avecConv && g.conversations === 0 && !g.jamais_servi;
+    // Le bloc reste à l'écran parce qu'il est neuf, et l'écran le dit — même
+    // règle, même phrase et même condition que la colonne vide de l'accueil :
+    // on ne l'écrit que là où l'exemption a joué pour de bon.
     projets.push({ g, depots, arbres, masque, inconnu,
+                   neuf: avecConv && g.conversations === 0 && !!g.jamais_servi,
                    peril: masque && arbres.some(chArbreEnPeril) });
   }
   const montres = projets.filter(p => !p.masque);
@@ -1888,6 +2001,10 @@ function rendChantier(d) {
     const hd = el("header", "ch-hd");
     hd.append(el("span", "nm", p.g.project),
               el("span", "ct", n + (n > 1 ? " arbres" : " arbre")));
+    // Voir `MOT_NEUF` : la même phrase que sur l'accueil, au même moment, pour
+    // la même raison. Elle se pose après le compte d'arbres et non avant le nom,
+    // parce qu'elle qualifie la PRÉSENCE du bloc, pas le projet lui-même.
+    if (p.neuf) hd.append(el("span", "neuf", MOT_NEUF));
     sec.append(hd);
 
     for (const dep of p.depots) sec.append(blocDepot(p.g, dep, d));

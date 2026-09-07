@@ -246,6 +246,15 @@
       masqués contiennent du travail qu'on peut perdre&nbsp;: du non commité, des
       commits non poussés, une incohérence. Le compteur décrit toujours l'onglet
       qu'on regarde.</p>
+    <p><b>Il ne masque jamais un projet qu'on vient d'adopter.</b> Un projet
+      neuf n'a, par construction, aucune conversation&nbsp;— et c'est justement
+      sa colonne vide qui porte son lanceur
+      <code>claude-nomprojet</code>&nbsp;: le filtre lui retirerait la seule
+      porte par laquelle on l'ouvre la première fois. Il reste donc affiché, et
+      le dit sous son lanceur — <b>projet neuf — affiché jusqu'à sa première
+      conversation</b>. Dès qu'une conversation y a tourné, il rentre dans le
+      rang, et <b>définitivement</b>&nbsp;: la refermer ne le rend pas neuf à
+      nouveau. Sur l'onglet Chantier, la même mention accompagne son bloc.</p>
     <p><b>Et il ne masque jamais sur une ignorance.</b> Quand le serveur n'a pas
       pu lire l'état des conversations, il répond «&nbsp;je ne sais pas&nbsp;» et
       non «&nbsp;aucune&nbsp;». Rien n'est alors retiré, sur aucun des deux
@@ -253,8 +262,11 @@
       serait le pire mensonge que cet écran puisse dire.</p>
     <p>Un projet sans conversation est masqué <b>même s'il contient du travail
       non commité</b>. C'est un choix assumé&nbsp;: l'interrupteur fait ce que son
-      libellé annonce, sans exception discrétionnaire — et ce qu'il emporte, il
-      le dit.</p>
+      libellé annonce, sans exception au cas par cas — et ce qu'il emporte, il
+      le dit. Les deux exceptions ci-dessus n'en sont pas
+      vraiment&nbsp;: l'une est une ignorance avouée, l'autre s'éteint d'elle-même
+      à la première conversation. Aucune ne dépend d'un jugement sur le contenu
+      du projet.</p>
     <p><b>Éteint, il découvre une bande sous les colonnes</b>&nbsp;: c'est l'état
       « tous les projets », donc le seul moment où la question « en
       manque-t-il&nbsp;? » a un sens. Le bouton
@@ -295,7 +307,10 @@
         se rattachent à aucun projet déclaré, en déduit un nom et une racine, et
         les propose en haut de la colonne <b>AUTRE</b>. Un clic ouvre le
         formulaire pré-rempli&nbsp;; valider crée la colonne, sa couleur, et dépose
-        un lanceur <code>claude-nomprojet</code> dans <code>~/.local/bin</code>.</li>
+        un lanceur <code>claude-nomprojet</code> dans <code>~/.local/bin</code>.
+        La colonne reste affichée même <b>avec conversation</b> allumé, jusqu'à
+        sa première conversation&nbsp;: sans quoi le projet qu'on vient
+        d'ajouter disparaîtrait aussitôt, lanceur compris.</li>
       <li><b>Chercher les projets du poste</b> — l'adoption ci-dessus ne voit que
         les dossiers où une conversation est <em>déjà</em> ouverte. Éteins
         <b>avec conversation</b>&nbsp;: sous les colonnes apparaît un bouton qui,
@@ -345,7 +360,9 @@
       ici&nbsp;: il retire les <b>blocs de projet</b> où aucune conversation
       Claude ne travaille, comme il retire leur colonne sur l'onglet
       Conversations. Le compteur posé à sa droite dit alors combien de projets
-      sont partis et les nomme au survol. La règle complète est plus haut, à
+      sont partis et les nomme au survol. Un projet qu'on vient d'adopter fait
+      exception&nbsp;: son bloc reste, et le dit, jusqu'à sa première
+      conversation. La règle complète est plus haut, à
       <b>Le bandeau du haut</b>.</p>
     <p>Quand tout est masqué, ce panneau ne se contente pas d'être vide&nbsp;: il
       écrit ce qui manque et comment le revoir, et il répète en

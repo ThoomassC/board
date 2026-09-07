@@ -163,6 +163,24 @@ def ecrire_json(chemin, obj):
         return False
 
 
+def neufs_declares(brut):
+    """La liste `neufs` de layout.json, lue DÉFENSIVEMENT.
+
+    `layout.json` s'édite à la main, se perd et se restaure : sa valeur n'est
+    une liste de noms que par convention. On lit le type promis par le contrat,
+    ou on ne lit rien.
+
+    Une CHAÎNE et un DICTIONNAIRE sont les deux formes qui piègent, parce que
+    ni l'une ni l'autre ne lève sur un `in` : `"Alpha" in "Alphabet"` est vrai,
+    et `"Alpha" in {"Alpha": 1700000000}` aussi — le jour où l'on voudra dater
+    les adoptions, ce dictionnaire deviendra tentant. Les deux marqueraient un
+    projet à tort, sans une ligne d'erreur.
+    """
+    if not isinstance(brut, list):
+        return []
+    return [n for n in brut if isinstance(n, str) and n]
+
+
 def fusion_config():
     cfg = json.loads(json.dumps(CONFIG_DEFAUT))
     perso = lire_json(os.path.join(RACINE, "config.json"), {}) or {}
@@ -632,6 +650,16 @@ class Board:
         self.cfg_at = 0
         self.vus = lire_json(os.path.join(RACINE, "seen.json"), {}) or {}
         self.layout = lire_json(os.path.join(RACINE, "layout.json"), {}) or {}
+        # `layout.json` a désormais TROIS écrivains — le glisser-déposer du
+        # client (`poser_layout`), l'adoption d'un projet (`_inscrire_neuf`) et
+        # la purge des projets servis (`_oublier_neufs_servis`) — et le serveur
+        # est un `ThreadingHTTPServer` : la boucle SSE et une requête HTTP
+        # tournent dans deux fils. Chacun fait un lire-modifier-écrire sur ce
+        # dict, et sans verrou `json.dump` peut sérialiser un dictionnaire en
+        # train de changer de taille. Réentrant parce que les deux écrivains de
+        # `neufs` prennent le verrou pour lire la liste, puis appellent
+        # `_ecrire_neufs`, qui le reprend.
+        self._verrou_layout = threading.RLock()
         # sid -> horodatage de mise à la poubelle. Une session archivée quitte
         # le board vivant mais reste dans l'historique : rien n'est détruit.
         self.archive = lire_json(os.path.join(RACINE, "archive.json"), {}) or {}
@@ -981,6 +1009,13 @@ class Board:
         self.dernieres_sessions = els
         self.dernieres_sessions_at = maintenant
 
+        # AVANT de publier les groupes : ce lot est une observation vivante, il
+        # peut retirer un projet de `neufs`, et le drapeau publié doit être
+        # celui d'APRÈS le retrait. Publier puis purger ferait afficher une fois
+        # de plus un projet qu'on vient de déclarer servi.
+        self._oublier_neufs_servis(els)
+        neufs = set(self.neufs())
+
         presents = {e["project"] for e in els}
         colonnes, repli = self._colonnes(presents)
 
@@ -994,8 +1029,12 @@ class Board:
             # Tri déterministe : ordre manuel d'abord, sinon repo puis identifiant.
             lot.sort(key=lambda e: (rang.get(e["sid"], 10_000),
                                     e["repo"] or "", e["ident"] or ""))
+            # `jamais_servi` TOUJOURS PRÉSENT, et booléen : « pas neuf » est une
+            # valeur du contrat, jamais l'absence d'une clé. Le serveur publie
+            # le FAIT ; la décision de masquer appartient au client.
             groupes.append({"project": nom, "accent": accents.get(nom),
-                            "count": len(lot), "sessions": lot})
+                            "count": len(lot), "sessions": lot,
+                            "jamais_servi": nom in neufs})
 
         # ── LE BANDEAU D'ATTENTION : LA SEULE ZONE TRIÉE PAR URGENCE ─────────
         #
@@ -1118,11 +1157,17 @@ class Board:
         """
         colonnes, repli = self._colonnes(set())
         accents = {p.get("name"): p.get("accent") for p in self.cfg.get("projects", [])}
+        # `neufs` est LU mais pas purgé : un dossier d'états illisible ne prouve
+        # pas qu'aucune conversation ne tourne. Le drapeau reste publié, comme
+        # les colonnes — c'est ce qui empêche le filtre du client de faire
+        # disparaître, pendant l'aveuglement, le projet qu'on vient d'adopter.
+        neufs = set(self.neufs())
         return {
             "now": maintenant, "total": None, "mode": "L",
             "account": lire_json(os.path.join(RACINE, "account.json"), {}) or {},
             "groupes": [{"project": n, "accent": accents.get(n),
-                         "count": 0, "sessions": []} for n in colonnes],
+                         "count": 0, "sessions": [],
+                         "jamais_servi": n in neufs} for n in colonnes],
             "attention": [], "attente_degrade": None,
             "capteurs_age_s": None,
             "notify_actif": bool((self.cfg.get("notify") or {}).get("enabled")
@@ -1165,9 +1210,142 @@ class Board:
             els = self.sessions(int(time.time()))
         except Exception:
             return None
+        # CE CHEMIN AUSSI RETIRE LES PROJETS SERVIS, et il le faut : c'est le
+        # seul qui observe des conversations vivantes quand aucun onglet du
+        # board n'est ouvert pour alimenter la boucle SSE — l'onglet Chantier
+        # seul, ou la sonde de pastille au chargement de la page. La purge est
+        # posée sur les DEUX chemins d'observation, pas sur un seul.
+        # Le chemin du dessus n'en a pas besoin : `instantane()` a déjà purgé ce
+        # lot-là avant de le mémoriser, il y a moins de `tolerance_s`.
+        self._oublier_neufs_servis(els)
         # On ne met PAS à jour dernieres_sessions_at : ce lot n'a pas été publié à
         # un client, et la boucle SSE reste la seule à horodater sa vérité.
         return els
+
+    # ---- les projets NEUFS ---------------------------------------------
+    #
+    # LE DÉFAUT CORRIGÉ. Le filtre « avec conversation » de l'onglet Chantier
+    # masque les projets sans conversation en cours. On découvrait un dépôt du
+    # poste, on l'adoptait — et il disparaissait aussitôt, puisqu'il n'a
+    # évidemment aucune conversation. Or c'est sa colonne vide qui porte le nom
+    # de son lanceur `claude-<projet>` : le filtre retirait la porte d'entrée du
+    # projet qu'on venait d'ajouter.
+    #
+    # LA RÈGLE. Un projet adopté reste visible jusqu'à ce qu'une conversation
+    # Claude y ait tourné au moins une fois. Ensuite il rejoint le lot commun et
+    # redevient masquable, DÉFINITIVEMENT : « a déjà servi » est irréversible.
+    # Sans cette irréversibilité, un projet ressortirait du filtre chaque fois
+    # qu'on ferme sa dernière conversation — le contraire du besoin.
+    #
+    # POURQUOI C'EST PERSISTÉ alors que le dépôt refuse de mémoriser les
+    # préférences d'affichage : ce n'en est pas une. `avecConv` (l'interrupteur)
+    # reste volontairement non persisté ; `neufs` est un FAIT DE CYCLE DE VIE,
+    # au même titre que `seen.json` ou `archive.json`, et il doit survivre au
+    # redémarrage du serveur — sinon le projet redevient masquable à la première
+    # relance et le défaut revient tel quel.
+    #
+    # DEUX NOMS FRANCHEMENT DIFFÉRENTS pour deux choses différentes : `neufs`
+    # est la liste persistée, `jamais_servi` le booléen publié par groupe. Un
+    # `g.neufs` côté client rendrait `undefined`, donc faux, donc le bug qu'on
+    # corrige — en silence. Le dépôt s'est déjà fait prendre une fois à ce jeu
+    # (`convs` contre `conversations`).
+    def neufs(self):
+        """Les projets adoptés qu'aucune conversation n'a encore vus."""
+        return neufs_declares(self.layout.get("neufs"))
+
+    def _ecrire_neufs(self, liste):
+        with self._verrou_layout:
+            self.layout["neufs"] = liste
+            return ecrire_json(os.path.join(RACINE, "layout.json"), self.layout)
+
+    def _projets_configures(self):
+        """Les noms de projets déclarés — ou None si `config.json` est illisible.
+
+        Le None n'est pas décoratif : c'est lui qui empêche la purge des
+        fantômes de vider la liste. `fusion_config()` ne peut pas le dire — elle
+        retombe sur `CONFIG_DEFAUT`, dont `projects` est vide, et un
+        `config.json` momentanément illisible (droits, montage tombé, écriture
+        en cours surprise hors du `os.replace`) ferait alors passer TOUS les
+        projets neufs pour des fantômes. On interroge donc le fichier lui-même
+        avant de conclure quoi que ce soit sur ce que la configuration contient.
+
+        Les NOMS, eux, viennent de `self.cfg` et non du fichier brut : c'est la
+        configuration fusionnée qui fait foi partout ailleurs dans ce serveur,
+        et deux lectures divergentes finiraient par se contredire.
+        """
+        if lire_json(os.path.join(RACINE, "config.json"), None) is None:
+            return None
+        noms = {p.get("name") for p in (self.cfg.get("projects") or [])
+                if isinstance(p, dict) and p.get("name")}
+        return noms
+
+    def _inscrire_neuf(self, nom):
+        """Inscrit un projet fraîchement adopté. SEUL `creer_projet` appelle ici.
+
+        Une seule fois : `neufs` n'est pas une liste de faveurs qui grandit
+        indéfiniment. Un nom déjà présent — layout édité à la main, config
+        remise à zéro, adoption rejouée — y reste UNE fois.
+        """
+        with self._verrou_layout:
+            courants = self.neufs()
+            if nom in courants:
+                return True
+            return self._ecrire_neufs(courants + [nom])
+
+    def _oublier_neufs_servis(self, els):
+        """Retire de `neufs` tout projet où une conversation vient d'être VUE.
+
+        Auto-guérissant : aucun geste de l'utilisateur, aucune commande de
+        nettoyage, rien à refaire au prochain démarrage. Appelée sur les DEUX
+        chemins qui produisent une observation vivante — `instantane()` (la
+        boucle SSE) et `sessions_connues()` (l'onglet Chantier) —, et sur eux
+        seuls : une ignorance ne doit jamais déclencher un retrait irréversible.
+
+        `els` est TOUJOURS un lot réellement observé. L'instantané AVEUGLE
+        (dossier d'états illisible) ne passe pas ici : il ne prouve pas qu'aucune
+        conversation ne tourne, il prouve qu'on n'a pas pu regarder. Déclencher
+        sur une ignorance un retrait définitif, ce serait perdre pour de bon la
+        visibilité d'un projet qu'on vient d'adopter.
+
+        DEUX TROUS ASSUMÉS, et ils vont tous deux dans le sens sûr — le projet
+        reste neuf, donc reste VISIBLE, ce qui est le besoin :
+
+          · BOARD FERMÉ. On n'interroge que les conversations vivantes, jamais
+            l'historique des transcripts. Adopter un projet, y travailler board
+            fermé, et rouvrir le board plus d'une heure après la fin de la
+            conversation (`thresholds.oubli_apres_s`, qui la fait sortir de
+            `sessions()`) laisse le projet « neuf ». Aller lire les transcripts
+            coûterait un couplage plus cher que le trou qu'il bouche.
+          · CONVERSATIONS `dead`. Elles sont écartées en amont par `sessions()`
+            — qui rend leur fond d'origine aux panes et passe au suivant — et
+            n'atteignent donc pas cette fonction : une conversation qui a tourné
+            puis s'est proprement terminée avant le premier passage ici ne
+            retire rien.
+
+        LES FANTÔMES sont purgés dans la foulée : un nom que la configuration ne
+        porte plus ne désigne aucune colonne, ne peut plus rien rendre visible,
+        et resterait sinon dans `layout.json` pour toujours. Mais UNIQUEMENT
+        quand la configuration a été lue avec succès (cf. `_projets_configures`).
+        """
+        # Hors verrou : le cas courant est une liste vide, et il ne doit rien
+        # coûter à une boucle qui repasse ici une fois par seconde.
+        if not self.neufs():
+            return                       # rien à retirer : pas une écriture
+        # `state` est déjà filtré par `sessions()`, qui écarte les `dead` et les
+        # panes morts. On ne le refait pas : ce lot EST la liste des vivantes.
+        servis = {e.get("project") for e in els if isinstance(e, dict)}
+        with self._verrou_layout:
+            courants = self.neufs()      # relue SOUS le verrou : elle a pu bouger
+            # LA CONFIGURATION SE LIT SOUS LE MÊME VERROU QUE LA LISTE, sinon une
+            # adoption qui se glisse entre les deux lectures inscrit un projet
+            # que la configuration d'avant ne connaît pas : il serait purgé comme
+            # fantôme, et l'adoption annulée en silence.
+            connus = self._projets_configures()
+            restants = [n for n in courants if n not in servis]
+            if connus is not None:
+                restants = [n for n in restants if n in connus]
+            if restants != courants:
+                self._ecrire_neufs(restants)
 
     def marquer_vu(self, cle):
         self.vus[cle] = int(time.time())
@@ -1226,6 +1404,16 @@ class Board:
         self.cfg = fusion_config()
         self.cfg_at = 0
 
+        # LE PROJET EST NEUF, et il le reste jusqu'à sa première conversation.
+        # Inscrit APRÈS l'écriture de la configuration : une adoption refusée
+        # (nom pris, dossier déjà rattaché, configuration illisible) sort plus
+        # haut et n'inscrit personne. Inscrit AVANT le lanceur, dont l'échec ne
+        # remet pas le projet en cause — il existe, sa colonne doit rester
+        # visible, et c'est même à ce moment-là qu'on en a le plus besoin.
+        # Un échec d'écriture de `layout.json` ne fait pas échouer l'adoption :
+        # le projet est créé, il sera simplement masquable tout de suite.
+        self._inscrire_neuf(nom)
+
         ok, lanceur = self._poser_lanceur(nom, chemin)
         return True, ("projet créé" if ok else
                       "projet créé, mais le lanceur n'a pas pu être écrit"), lanceur
@@ -1281,10 +1469,27 @@ class Board:
             return False, None
 
     def poser_layout(self, data):
-        for k in ("projects", "cards"):
-            if k in data:
-                self.layout[k] = data[k]
-        ecrire_json(os.path.join(RACINE, "layout.json"), self.layout)
+        """Écrit dans `layout.json` les seules clés que le client a le droit de poser.
+
+        La liste blanche n'est pas une précaution de style : le corps de la
+        requête vient du navigateur, `layout.json` est relu à chaque démarrage,
+        et une clé inconnue y resterait pour toujours.
+
+        `NEUFS N'EN FAIT PAS PARTIE`, et c'est délibéré. Le cycle de vie d'un
+        projet neuf est piloté de bout en bout par le serveur : `creer_projet`
+        inscrit, l'observation d'une conversation retire (cf.
+        `_oublier_neufs_servis`). Aucun appelant côté client n'écrit cette clé.
+        L'accepter n'ouvrirait qu'une chose : le droit, pour un `curl`, de
+        réinscrire comme neuf un projet qui a déjà servi, et de le faire
+        ressortir du filtre à volonté. Une capacité dont personne n'a besoin et
+        qui ne sert qu'à défaire un invariant se supprime, elle ne se borde pas.
+        Un `neufs` posté est donc ignoré comme n'importe quelle clé inconnue.
+        """
+        with self._verrou_layout:
+            for k in ("projects", "cards"):
+                if k in data:
+                    self.layout[k] = data[k]
+            ecrire_json(os.path.join(RACINE, "layout.json"), self.layout)
 
 
 BOARD = Board()
@@ -1399,9 +1604,16 @@ class Handler(BaseHTTPRequestHandler):
                                            "degrade": "module Chantier absent"})
             try:
                 force = "force=1" in (self.path.split("?", 1)[1] if "?" in self.path else "")
+                # L'ORDRE DES DEUX LIGNES EST UN INVARIANT, et c'est pour cela
+                # qu'elles ne sont pas des arguments en ligne :
+                # `sessions_connues()` est une observation vivante, elle peut
+                # retirer un projet de `neufs`. Lire la liste avant l'appel
+                # publierait un `jamais_servi` d'avant le retrait.
+                sessions = BOARD.sessions_connues()
+                neufs = BOARD.neufs()
                 return self._envoyer(200, chantier.scan(
-                    BOARD.cfg, sessions=BOARD.sessions_connues(),
-                    us_de=us_de, force=force))
+                    BOARD.cfg, sessions=sessions, us_de=us_de, force=force,
+                    neufs=neufs))
             except Exception as e:
                 return self._envoyer(200, {"groupes": [], "total": 0, "compteurs": {},
                                            "degrade": "erreur du module Chantier : %s" % e})
