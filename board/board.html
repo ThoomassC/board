@@ -66,6 +66,27 @@
     <span class="ch-sep" aria-hidden="true"></span>
     <div class="ch-ctrl">
       <span class="flux" id="flux" title="Fraîcheur du flux"><b></b><span>—</span></span>
+      <!-- L'INTERRUPTEUR EST DANS LE CHROME PARCE QU'IL GOUVERNE DEUX ÉCRANS.
+           Il a d'abord vécu dans la barre de l'onglet Chantier, où il ne pouvait
+           filtrer que le Chantier — or l'écran d'accueil est celui qui affiche
+           une colonne par projet DÉCLARÉ, conversation ou pas, et c'est là que
+           les projets sur lesquels on ne travaille pas encombrent. Un même
+           besoin sur deux écrans, c'est un contrôle global, et le seul endroit
+           global de cette page est cette barre. Il est donc écrit ICI, en dur,
+           et non construit par un rendu : le chrome n'est jamais reconstruit,
+           donc l'interrupteur ne peut pas emporter le focus avec lui.
+           `autocomplete="off"` n'est pas décoratif : sans lui, le navigateur
+           restaure l'état de la case après un rechargement, ce qui PERSISTERAIT
+           une préférence d'affichage — exactement ce que la doctrine d'avecConv
+           interdit. board.js force en plus la case à l'allumage au démarrage. -->
+      <label class="bascule filtre" id="filtre-conv">
+        <input type="checkbox" id="fc-case" autocomplete="off" checked
+               aria-describedby="fc-desc">
+        <span class="rail" aria-hidden="true"></span>
+        <span class="txt">avec conversation</span>
+      </label>
+      <span class="fc-aveu" id="fc-aveu" hidden></span>
+      <span class="hors-vue" id="fc-desc"></span>
       <button class="theme bascule" id="btn-theme" type="button" title="Basculer le thème"><span class="rail" aria-hidden="true"></span></button>
       <button class="theme" id="btn-aide" type="button" title="À quoi sert cet écran ?"
               aria-label="Aide">?</button>
@@ -172,6 +193,36 @@
       ailleurs&nbsp;: son contenu est ici, nommé, au lieu d'être un nombre sur un
       onglet qu'il fallait ouvrir pour le comprendre.</p>
 
+    <h4>L'interrupteur «&nbsp;avec conversation&nbsp;»</h4>
+    <p>À gauche de la bascule de thème, un second commutateur&nbsp;:
+      <b>avec conversation</b>. Allumé, l'écran ne garde que les projets où une
+      conversation Claude travaille <b>en ce moment</b> — les autres attendront
+      le jour où l'on y retournera. Il gouverne <b>deux écrans à la fois</b>,
+      parce que c'est le même besoin des deux côtés&nbsp;: sur
+      <b>Conversations</b> il retire la colonne du projet, sur <b>Chantier</b> il
+      retire son bloc d'arbres de travail. Un seul état, un seul geste.</p>
+    <p>Il est <b>allumé à chaque ouverture de page</b> et ne se mémorise nulle
+      part. Une préférence d'affichage qui survit à la nuit finirait par cacher,
+      un lundi matin, le projet où l'on a laissé vendredi soir trois fichiers non
+      commités — sans qu'aucune trace du geste de la semaine dernière n'explique
+      pourquoi.</p>
+    <p><b>Il ne masque jamais en silence.</b> Le compteur posé juste à sa droite
+      dit combien de projets ne sont pas affichés, et les nomme au survol comme
+      dans le texte lu par les lecteurs d'écran. Sur l'onglet Chantier il ajoute,
+      en <b style="color:var(--amber)">⚠ ambre</b>, combien de ces projets
+      masqués contiennent du travail qu'on peut perdre&nbsp;: du non commité, des
+      commits non poussés, une incohérence. Le compteur décrit toujours l'onglet
+      qu'on regarde.</p>
+    <p><b>Et il ne masque jamais sur une ignorance.</b> Quand le serveur n'a pas
+      pu lire l'état des conversations, il répond «&nbsp;je ne sais pas&nbsp;» et
+      non «&nbsp;aucune&nbsp;». Rien n'est alors retiré, sur aucun des deux
+      écrans&nbsp;: faire disparaître tous les projets sur une lecture ratée
+      serait le pire mensonge que cet écran puisse dire.</p>
+    <p>Un projet sans conversation est masqué <b>même s'il contient du travail
+      non commité</b>. C'est un choix assumé&nbsp;: l'interrupteur fait ce que son
+      libellé annonce, sans exception discrétionnaire — et ce qu'il emporte, il
+      le dit.</p>
+
     <h3>Les deux jauges du haut</h3>
     <p>Tes quotas 5 h et 7 j, avec le temps restant avant réinitialisation. Le petit
       trait vertical sur chaque jauge est le <b>repère de rythme</b>&nbsp;: il marque
@@ -239,26 +290,16 @@
     <p>Chaque <b>dépôt</b> se replie d'un clic sur son nom. Replié, il annonce ce
       qu'il contient — et il n'a pas le droit de taire une incohérence&nbsp;: le
       <b>⚠</b> reste visible. Les projets, eux, ne se replient jamais.</p>
-    <p>L'interrupteur <b>avec conversation</b>, en haut à droite du panneau, ne
-      garde que les projets où une conversation Claude travaille en ce moment —
-      les autres attendront le jour où on y retournera. Il est <b>allumé à chaque
-      ouverture de page</b> et ne se mémorise nulle part&nbsp;: une préférence
-      d'affichage qui survit à la nuit finirait par cacher, un lundi matin, le
-      dépôt où l'on a laissé vendredi soir trois fichiers non commités.</p>
-    <p><b>Une seule sorte de projet échappe au masquage</b>&nbsp;: celui dont on
-      <b>ignore</b> le nombre de conversations. Quand l'instantané des
-      conversations manque au moment du relevé, le serveur répond «&nbsp;je ne
-      sais pas&nbsp;» et non «&nbsp;aucune&nbsp;», et on ne range rien sur cette
-      réponse-là.</p>
-    <p>Un projet sans conversation est masqué <b>même s'il contient du travail
-      non commité</b>. C'est un choix assumé&nbsp;: l'interrupteur fait ce que son
-      libellé annonce, sans exception discrétionnaire. Mais il ne le fait jamais
-      en silence — le compteur <b>projets masqués</b> porte alors un nombre en
-      <b style="color:var(--amber)">⚠ ambre</b> qui compte les projets masqués
-      contenant du travail qu'on peut perdre, et les nomme au survol comme dans
-      la description lue par les lecteurs d'écran. Quand tout est masqué, l'écran
-      vide le répète en toutes lettres. Éteindre l'interrupteur les remontre
-      tous.</p>
+    <p>L'interrupteur <b>avec conversation</b> du bandeau du haut vaut aussi
+      ici&nbsp;: il retire les <b>blocs de projet</b> où aucune conversation
+      Claude ne travaille, comme il retire leur colonne sur l'onglet
+      Conversations. Le compteur posé à sa droite dit alors combien de projets
+      sont partis et les nomme au survol. La règle complète est plus haut, à
+      <b>Le bandeau du haut</b>.</p>
+    <p>Quand tout est masqué, ce panneau ne se contente pas d'être vide&nbsp;: il
+      écrit ce qui manque et comment le revoir, et il répète en
+      <b style="color:var(--amber)">⚠ ambre</b> lesquels des projets masqués
+      contiennent du travail qu'on peut perdre.</p>
     <ul class="etats">
       <li><b>● en cours</b> — une conversation vivante travaille dedans.</li>
       <li><b style="color:var(--amber)">➜ en revue</b> — une PR ouverte porte cette

@@ -520,6 +520,102 @@ body{
   .bascule .rail,.bascule .rail::after{transition:none}
 }
 
+/* ═══════════ L'INTERRUPTEUR « avec conversation » ════════════════════════════
+   Le SECOND commutateur de cette barre, et le premier contrôle du chrome qui
+   gouverne le CONTENU de deux écrans : l'accueil (une colonne par projet, dont
+   celles sans conversation) et le Chantier (un bloc par projet). Il a d'abord
+   vécu dans la barre de l'onglet Chantier ; il n'y filtrait qu'un écran sur
+   deux, et pas celui qu'on regarde en arrivant.
+
+   POURQUOI IL GARDE UN LIBELLÉ ÉCRIT, alors que la bascule de thème n'en a pas.
+   Ce n'est pas une incohérence, c'est la différence entre les deux contrôles.
+   Le thème se donne à voir : on l'actionne, tout change de couleur, le résultat
+   EST l'explication. Un filtre fait le contraire — il RETIRE, et ce qui est
+   retiré ne peut pas expliquer son absence. Un rail muet qui fait disparaître
+   trois colonnes est exactement l'écran qui ment que ce dépôt s'interdit. Le
+   libellé coûte 117 px sur une barre qui en a 378 de libres à 1440 (mesuré) et
+   qui passe de toute façon en deux rangées sous 1415 : il est payable.
+
+   ET C'EST LE MÊME MOT QUE PARTOUT AILLEURS. « avec conversation » est déjà le
+   nom du contrôle dans l'aide, dans l'annonce et dans l'aveu ; c'est aussi le
+   mot de la demande d'origine (« tous les projets avec une conv claude »). Un
+   cinquième vocabulaire — « actifs », « au travail » — aurait été un mot de plus
+   à apprendre pour zéro information de plus, dans un contrôle dont la revue
+   précédente reprochait précisément d'avoir quatre vocabulaires. L'adjectif est
+   orphelin, hors contexte d'onglet ; c'est l'aveu juste à côté qui lui rend son
+   nom : « avec conversation · 3 masqués » se lit sans effort.
+
+   LA BOÎTE est celle de `.theme` au pixel — même hauteur, même bordure
+   transparente qui SE MÉRITE PAR L'ÉTAT, même rayon. Deux contrôles voisins dans
+   la même barre sont la même boîte, sinon l'un des deux a l'air posé dessus.
+   Le survol prend en revanche la recette de `.aide-onglet` (fond --card) et non
+   celle de `.theme` (fond --panel) : le fond de cette barre EST --panel, donc
+   `.theme:hover` ne change aucun pixel de surface. */
+.filtre{
+  position:relative;             /* ancre la case retirée du flux */
+  display:flex; align-items:center; gap:7px; cursor:pointer; flex:none;
+  height:28px; padding:0 9px;
+  border:1px solid transparent; border-radius:var(--r-ctrl);
+  font-family:var(--mono); font-size:11.5px; line-height:1; color:var(--t3);
+  white-space:nowrap; user-select:none;
+}
+/* La case sort du flux visuel mais NI du DOM NI DE LA TABULATION — ni
+   `display:none` ni `visibility:hidden`, qui la retireraient des deux. Le rail
+   n'est qu'un dessin ; c'est la case native qui porte l'état, le clavier et la
+   barre d'espace. Aucun `role="switch"` : HTML sait déjà dire tout ça. */
+.filtre input{
+  position:absolute; width:1px; height:1px; margin:0; padding:0;
+  opacity:0; pointer-events:none;
+}
+/* `--rail-pos:1px` est POSÉ et non laissé au défaut : la position est la seule
+   variable qu'une règle de board.css repose plus haut dans l'arbre (voir
+   `:root[data-theme="sombre"] .theme.bascule`). La déclarer sur le rail rend cet
+   interrupteur imperméable à ce que `.bascule` gagnera plus tard — sa position
+   ne dépend QUE de sa case. */
+.filtre .rail{--rail-pos:1px}
+.filtre input:checked ~ .rail{
+  --rail-pos:10px; --rail-fond:var(--sky);
+  --rail-contour:var(--sky); --rail-pouce:var(--panel);
+}
+.filtre input:checked ~ .txt{color:var(--t1)}
+/* Le survol vit sur la BOÎTE et sur le rail, jamais sur l'encre du texte : celle
+   du texte appartient à l'ÉTAT (--t3 éteint, --t1 allumé), et la lui emprunter
+   ferait qu'éteint+survol imite exactement allumé. Un contrôle dont deux états
+   se ressemblent au survol est un contrôle qui ment. */
+.filtre:hover{background:var(--card); border-color:var(--line)}
+.filtre:hover .rail{--rail-contour:var(--t1)}
+/* L'anneau ceint le contrôle entier et non le rail de 20 × 11 : c'est sur la
+   boîte qu'on a tabulé. `:has()` parce que la case est un enfant du label —
+   même idiome que fiche.css. */
+.filtre:has(input:focus-visible){outline:2px solid var(--sky); outline-offset:2px}
+
+/* ── L'AVEU, COLLÉ À CE QUI LE CAUSE ──────────────────────────────────────────
+   Un écran qui retire trois colonnes sans le dire ment sur ce qu'il montre.
+   L'aveu est donc posé contre l'interrupteur, et pas ailleurs : c'est là que va
+   l'œil de qui se demande « où sont passées mes colonnes ? », et c'est le seul
+   endroit qui reste vrai sur les DEUX écrans que ce contrôle gouverne — un aveu
+   par écran aurait été deux nombres à tenir d'accord.
+   Encre la plus discrète, comme `.ch-cpt.masque` : un projet retiré de la liste
+   n'est pas une alerte, c'est un aveu. Le ⚠ ambre qui peut le suivre, lui, en
+   est une : il dit qu'un projet masqué contient du travail qu'on peut perdre. */
+.fc-aveu{
+  flex:none; font-family:var(--mono); font-size:11px; color:var(--t3);
+  white-space:nowrap; cursor:help;
+}
+.fc-aveu b{font-weight:400; color:var(--t3); font-variant-numeric:tabular-nums}
+.fc-aveu .peril{color:var(--amber); margin-left:5px}
+.fc-aveu[hidden]{display:none}
+
+/* Présent dans le DOM et dans l'arbre d'accessibilité, absent de l'écran. Fait
+   descendre dans le document ce qui ne vivrait sinon que dans un `title` —
+   inatteignable au clavier comme au lecteur d'écran (WCAG 1.3.1). `clip-path`
+   et non `display:none` ni `visibility:hidden` : ces deux-là retireraient le
+   texte de l'arbre, ce qui est exactement le défaut qu'on corrige. */
+.hors-vue{
+  position:absolute; width:1px; height:1px; margin:-1px; padding:0; border:0;
+  overflow:hidden; clip-path:inset(50%); white-space:nowrap;
+}
+
 /* ═════════════════ adopter un projet détecté ═════════════════════════════════
    Remplace le bouton « + projet » de la barre, supprimé le 27/08. Il vivait à
    côté du mot-marque, sans lien avec rien de ce que l'écran montrait, et il était
@@ -805,6 +901,16 @@ a.att:hover{text-decoration:none}
        /* posée par board.js selon le nombre de projets ouverts */
        grid-template-columns:var(--cols,none)}
 .board.vide{place-content:center; color:var(--t3)}
+/* Le vide du SOIR : plus aucune conversation, et « avec conversation » a retiré
+   les colonnes restantes. C'est le cas le plus fréquent de cet écran vide, et le
+   seul où l'aveu du chrome ne suffit pas — il n'y a rien en dessous pour lui
+   donner une échelle. On nomme donc ici la cause ET le geste, en toutes lettres.
+   `max-width` en ch : une ligne de prose centrée sur 1500 px ne se lit pas. */
+.board-vide{
+  margin:0; max-width:56ch; text-align:center; line-height:1.7;
+  font-family:var(--mono); font-size:12.5px; color:var(--t3);
+}
+.board-vide b{color:var(--t2); font-weight:700}
 /* Le panneau porte son propre rembourrage : les cartes sont des surfaces posées
    DEDANS, jamais des lignes qui touchent ses bords. C'est ce qui distingue un
    panneau d'une liste encadrée. */
@@ -1576,6 +1682,17 @@ dialog#aide::backdrop{background:var(--voile)}
   text-transform:uppercase; color:var(--t3);
 }
 #aide h3:first-of-type{margin-top:0}
+/* Un SEUL sous-titre dans toute l'aide, et il est mérité : l'interrupteur « avec
+   conversation » est un contrôle du bandeau, donc il appartient à la section du
+   bandeau — mais il retire du contenu à deux écrans, ce qui demande quatre
+   paragraphes que personne ne doit avoir à lire pour comprendre la file
+   d'attente. Même casse et même graisse que h3, en encre plus discrète et sans
+   la respiration du dessus : il se lit comme une subdivision, pas comme une
+   nouvelle section. */
+#aide h4{
+  margin:14px 0 6px; font-size:11px; font-weight:700; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--t3); opacity:.85;
+}
 #aide p{margin:0 0 6px; color:var(--t2); max-width:74ch}
 #aide b{color:var(--t1); font-weight:600}
 #aide code{

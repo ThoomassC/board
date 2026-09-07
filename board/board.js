@@ -27,6 +27,108 @@ let dernierAt = 0;           // horodatage local de réception (fraîcheur du fl
 let ongletActif = "board";
 let layout = { projects: [], cards: {} };
 const survol = new Map();    // sid -> timer de marquage « vu »
+let ordreProjets = [];       // ordre COMPLET des colonnes, filtre ignoré : voir
+                             // le `drop` de brancherGlisserColonne
+
+/* ══════════ « avec conversation » : UN SEUL ÉTAT POUR DEUX ÉCRANS ════════════
+   `avecConv` allumé, on n'affiche que les projets où une conversation Claude
+   travaille en ce moment. Deux écrans obéissent :
+
+     ACCUEIL   une colonne par projet DÉCLARÉ, y compris à zéro conversation.
+               C'est l'écran d'arrivée, et c'est là que les projets sur lesquels
+               on ne travaille pas encombrent le plus. Critère : le groupe de
+               l'instantané n'a aucune `sessions`.
+     CHANTIER  un bloc par projet ayant des arbres de travail.
+               Critère : `conversations === 0` dans /api/chantier.
+
+   DEUX DONNÉES DIFFÉRENTES, UN SEUL ÉTAT. Les deux critères ne viennent pas de
+   la même source — l'instantané SSE d'un côté, un relevé git de l'autre — et
+   peuvent donc ne pas masquer exactement les mêmes projets au même instant. Ça
+   n'est pas une divergence à corriger : ce sont deux écrans qui ne listent pas
+   les mêmes objets. Ce qui ne doit PAS diverger, c'est la volonté de
+   l'utilisateur, et elle tient dans cette seule variable, pilotée par un seul
+   contrôle, dans le chrome (board.html, `.ch-ctrl`).
+
+   ALLUMÉ AU DÉMARRAGE, JAMAIS PERSISTÉ, et c'est la même règle que les plis de
+   l'onglet Chantier — voir la doctrine au-dessus de `chReplie`. Une préférence
+   d'affichage qui survit à la nuit finirait par cacher, un lundi matin, le
+   projet où l'on a laissé vendredi soir trois fichiers non commités, sans
+   qu'aucune trace du geste de la semaine dernière n'explique pourquoi. Ni
+   localStorage, ni /api/layout — et `autocomplete="off"` sur la case, sinon le
+   navigateur la restaurerait tout seul après un rechargement, ce qui
+   persisterait la préférence par la bande. */
+let avecConv = true;
+
+/* CE QUE CHAQUE ÉCRAN A MASQUÉ AU DERNIER RENDU, et ce que ce retrait emporte.
+   Chaque écran dépose ici son propre bilan ; l'aveu du chrome affiche celui de
+   l'onglet VISIBLE. Un seul aveu à l'écran, donc jamais deux nombres à tenir
+   d'accord — mais chacun reste calculé par l'écran qui masque, seul à savoir ce
+   qu'il retire (des colonnes ici, des arbres là). */
+const bilanFiltre = {
+  board:    { projets: 0, noms: [], perils: 0, nomsPeril: [], inconnu: false },
+  chantier: { projets: 0, noms: [], perils: 0, nomsPeril: [], inconnu: false },
+};
+
+function pluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
+
+/* ── L'AVEU, ET LE TEXTE QUI LE PORTE AILLEURS QUE DANS UN `title` ────────────
+   Trois publics, une seule rédaction : l'aveu visible à côté de l'interrupteur,
+   son `title` pour la souris, et la description liée à la case pour le clavier
+   et le lecteur d'écran (`aria-describedby` -> #fc-desc). Un `title` sur un
+   `<span>` n'est atteignable ni au clavier ni au lecteur d'écran (WCAG 1.3.1),
+   d'où le texte hors-vue qui existe pour de bon dans le document.
+
+   Le nom du contrôle reste COURT dans le label — c'est le nom accessible de la
+   case, et y verser trois phrases les ferait relire à chaque tabulation. */
+function texteFiltre(onglet) {
+  const b = bilanFiltre[onglet] || bilanFiltre.board;
+  let t = "Allumé, n'affiche que les projets où une conversation Claude "
+        + "travaille en ce moment. Vaut pour l'onglet Conversations, qui masque "
+        + "alors la colonne du projet, et pour l'onglet Chantier, qui masque son "
+        + "bloc d'arbres de travail.";
+  if (b.inconnu) {
+    /* L'IGNORANCE NE MASQUE RIEN, et c'est le cas qui compte le plus.
+       Côté accueil, un instantané AVEUGLE (`sessions_indisponibles`) publie
+       toutes les colonnes à zéro conversation : sans ce garde-fou, la moindre
+       lecture ratée du dossier d'états viderait l'écran d'accueil en entier.
+       docs/SCHEMA.md le nomme comme « l'échec le plus probable de tout le
+       serveur ». Côté chantier, c'est `conversations` à null. */
+    return t + " En ce moment le serveur ne sait pas quelles conversations "
+             + "tournent : RIEN n'est masqué tant qu'on ne sait pas.";
+  }
+  if (!b.projets) return t + " En ce moment, aucun projet n'est masqué.";
+  t += " En ce moment : " + pluriel(b.projets, "projet masqué", "projets masqués")
+     + " — " + b.noms.join(", ") + ".";
+  if (b.perils)
+    t += " " + pluriel(b.perils, "contient du travail qu'on peut perdre",
+                       "contiennent du travail qu'on peut perdre")
+       + " — non commité, non poussé ou incohérent : " + b.nomsPeril.join(", ") + ".";
+  return t + " Éteins « avec conversation » pour les revoir.";
+}
+
+/* Repeint l'aveu du chrome à partir du bilan de l'onglet VISIBLE. Appelé par les
+   deux rendus, par `ongler` et par la bascule elle-même : c'est le seul endroit
+   qui écrit dans #fc-aveu, donc le seul à pouvoir mentir. */
+function majAveuFiltre() {
+  const aveu = $("#fc-aveu"), desc = $("#fc-desc");
+  if (!aveu) return;
+  texte(desc, texteFiltre(ongletActif));
+  const b = bilanFiltre[ongletActif];
+  // Les onglets PR et Historique ne filtrent rien : un aveu y parlerait d'un
+  // écran qu'on ne regarde pas.
+  const concerne = ongletActif === "board" || ongletActif === "chantier";
+  if (!concerne || !avecConv || !b || !b.projets) { aveu.hidden = true; return; }
+  aveu.hidden = false;
+  aveu.textContent = "";
+  aveu.append(el("b", null, String(b.projets)),
+              document.createTextNode(b.projets > 1 ? " masqués" : " masqué"));
+  if (b.perils) {
+    const p = el("b", "peril", "⚠" + b.perils);
+    attr(p, "aria-hidden", "true");   // la description le dit en toutes lettres
+    aveu.append(p);
+  }
+  attr(aveu, "title", texteFiltre(ongletActif));
+}
 
 /* ─────────────────────────────── utilitaires ───────────────────────────── */
 const $ = (s, r = document) => r.querySelector(s);
@@ -592,13 +694,76 @@ function creerColonne(nom) {
 function rendBoard(snap) {
   const board = $("#board");
   board.className = "board mode-" + (snap.mode || "M");
-  const groupes = snap.groupes || [];
+  const tous = snap.groupes || [];
+
+  /* ── « avec conversation » SUR L'ÉCRAN D'ACCUEIL ──────────────────────────
+     Cet écran affiche une colonne par projet DÉCLARÉ, pas par projet occupé :
+     un projet sans aucune conversation y occupe une colonne pleine largeur pour
+     y écrire « Aucune conversation ouverte ». C'est précisément ce que
+     l'interrupteur du chrome retire.
+
+     LE CRITÈRE EST `sessions`, ET PAS `count`. Les deux sont publiés et
+     coïncident aujourd'hui (`count: len(lot)`, serveur.py), mais c'est le
+     tableau `sessions` qui décide de ce que la colonne CONTIENT. Filtrer sur ce
+     qui remplit la colonne, et non sur un nombre publié à côté, c'est ce qui
+     garantit qu'on ne masque jamais une colonne qui aurait eu des cartes.
+
+     L'IGNORANCE NE MASQUE RIEN — et ici ce n'est pas une précaution théorique.
+     Quand `Board.sessions()` n'arrive pas à lire ~/.claude/board/state — droits,
+     montage tombé, dossier supprimé pendant la lecture — le serveur répond par
+     un instantané AVEUGLE : toutes les colonnes, `count: 0`, `sessions: []`,
+     et le motif dans `sessions_indisponibles`. docs/SCHEMA.md appelle ça
+     « l'échec le plus probable de tout le serveur » et raconte le bug qu'il a
+     déjà causé une fois. Sans ce garde-fou, une lecture ratée viderait l'écran
+     d'ACCUEIL en entier, en affirmant qu'aucune conversation ne tourne. La
+     règle est donc la même que celle de `conversations === 0` sur le Chantier :
+     on ne fait pas disparaître un projet sur une ignorance.
+
+     LA COLONNE DE REPLI EST ÉPARGNÉE QUAND ELLE PORTE UNE ADOPTION. Vide, elle
+     ne dit rien et part comme les autres ; mais c'est la SEULE colonne où
+     peuvent apparaître les dossiers non déclarés à adopter (`majAdoption`), et
+     ce bloc-là n'est pas une conversation : c'est une action qui n'a aucun
+     autre endroit où vivre. */
+  const aveugle = !!snap.sessions_indisponibles;
+  const actif = g => (g.sessions || []).length > 0
+                  || (g.project === snap.fallback && (snap.candidats || []).length > 0);
+  const filtre = avecConv && !aveugle;
+  const groupes = filtre ? tous.filter(actif) : tous;
+  const caches = filtre ? tous.filter(g => !actif(g)) : [];
+  bilanFiltre.board = { projets: caches.length, noms: caches.map(g => g.project),
+                        perils: 0, nomsPeril: [], inconnu: aveugle };
+  // L'ordre COMPLET, avant filtrage : c'est lui que le glisser-déposer d'une
+  // colonne doit réécrire, sinon un projet masqué disparaîtrait de layout.json.
+  ordreProjets = tous.map(g => g.project);
+  majAveuFiltre();
 
   if (!groupes.length) {
     board.classList.add("vide");
-    if (!board.dataset.vide) {
-      board.textContent = "Aucune conversation Claude Code ouverte.";
-      board.dataset.vide = "1";
+    /* LE VIDE A DEUX CAUSES, ET ELLES NE SE DISENT PAS PAREIL. Sans filtre,
+       c'est un poste au repos. Avec le filtre, c'est l'écran qui a tout retiré —
+       et c'est le cas de TOUS LES SOIRS. Un écran vide qui ne nomme ni la cause
+       de son vide ni le geste qui le remplit est un écran cassé ; le compteur du
+       chrome ne suffit pas ici, puisqu'il n'y a rien en dessous pour lui donner
+       une échelle. On reconstruit donc à chaque fois dans ce cas, le
+       `dataset.vide` ne gardant que la version invariable. */
+    // `dataset.vide` sert de SIGNATURE et pas de drapeau : le flux repasse ici
+    // une fois par seconde, et reconstruire ce paragraphe à chaque tour serait
+    // un scintillement pour rien.
+    const sign = caches.length ? "f" + caches.length : "0";
+    if (board.dataset.vide !== sign) {
+      board.dataset.vide = sign;
+      board.textContent = "";
+      if (caches.length) {
+        const p = el("p", "board-vide");
+        p.append(document.createTextNode("Aucune conversation Claude ouverte. "),
+                 el("b", null, pluriel(caches.length, "projet est masqué",
+                                       "projets sont masqués")),
+                 document.createTextNode(" — éteins « avec conversation », en haut "
+                                         + "à droite, pour les revoir."));
+        board.append(p);
+      } else {
+        board.textContent = "Aucune conversation Claude Code ouverte.";
+      }
     }
     return;
   }
@@ -785,12 +950,27 @@ function brancherGlisserColonne(col) {
   col.addEventListener("drop", ev => {
     if (glisse?.type !== "col") return;
     ev.preventDefault(); col.classList.remove("cible");
-    const ordre = [...$("#board").querySelectorAll(".col")]
+    const vus = [...$("#board").querySelectorAll(".col")]
       .sort((a, b) => (+a.style.order || 0) - (+b.style.order || 0))
       .map(c => c.dataset.projet);
-    const de = ordre.indexOf(glisse.projet), vers = ordre.indexOf(col.dataset.projet);
+    const de = vus.indexOf(glisse.projet), vers = vus.indexOf(col.dataset.projet);
     if (de < 0 || vers < 0) return;
-    ordre.splice(vers, 0, ordre.splice(de, 1)[0]);
+    vus.splice(vers, 0, vus.splice(de, 1)[0]);
+    /* ── CE QUI EST MASQUÉ NE DOIT PAS ÊTRE EFFACÉ ────────────────────────────
+       Cet ordre était construit à partir des seules colonnes PRÉSENTES DANS LE
+       DOM, et il partait tel quel dans layout.json. Depuis que « avec
+       conversation » peut en retirer, déplacer une colonne aurait supprimé du
+       fichier tous les projets masqués : une préférence durable détruite par un
+       filtre d'AFFICHAGE, côté serveur, sans un mot. C'est le seul endroit du
+       diff où un état écran pouvait abîmer un état persistant.
+       On réécrit donc l'ordre COMPLET : chaque emplacement occupé par un projet
+       visible reçoit le suivant de la liste réordonnée, les projets masqués
+       gardent le leur. Les visibles bougent entre eux, les masqués ne bougent
+       pas — ce qui est exactement ce que l'utilisateur vient de demander. */
+    const reste = vus.slice();
+    const ordre = ordreProjets.length
+      ? ordreProjets.map(p => vus.includes(p) ? reste.shift() : p)
+      : vus;
     layout.projects = ordre;
     poste("/api/layout", { projects: ordre });
   });
@@ -1188,8 +1368,6 @@ const chVus = new Set();         // dépôts déjà vus : le repli PAR DÉFAUT n
                                  // s'applique qu'au premier rendu, sinon chaque
                                  // rafraîchissement annulerait le geste de
                                  // l'utilisateur et refermerait ce qu'il ouvre.
-let chAvecConv = true;           // n'afficher que les projets où une conversation
-                                 // Claude travaille. ALLUMÉ à chaque chargement.
 
 /* POURQUOI CES TROIS ENSEMBLES VIVENT DANS LA PAGE ET PAS AILLEURS.
    localStorage ne sert qu'au thème, et layout.json (côté serveur) ne mémorise que
@@ -1201,13 +1379,11 @@ let chAvecConv = true;           // n'afficher que les projets où une conversat
    fois — sauf la réserve, dont le repli repose sur un état FIXE du contrat de
    données (`etat === "reserve"`) et non sur un jugement du moment.
 
-   `chAvecConv` SUIT LA MÊME RÈGLE, et pour la même raison, en pire : il ne plie
-   pas un dépôt, il retire un projet entier de la liste. Le persister, ce serait
-   ouvrir la page un lundi matin sur un écran qui ne montre pas le dépôt où l'on
-   a laissé, vendredi soir, trois fichiers non commités — sans qu'aucune trace du
-   geste de la semaine dernière n'explique pourquoi. Ni localStorage, ni
-   /api/layout : chaque ouverture de page repart d'un filtre ALLUMÉ mais NEUF,
-   dont l'aveu (le compteur de masqués) est réaffiché à côté. */
+   `avecConv` — l'interrupteur du chrome, déclaré en tête de fichier — SUIT LA
+   MÊME RÈGLE, et pour la même raison, en pire : il ne plie pas un dépôt, il
+   retire un projet entier de deux écrans. Sa doctrine complète est là-haut,
+   avec lui ; elle n'a pas sa place ici depuis qu'il ne s'applique plus qu'à cet
+   onglet. */
 
 /* CE QUI EMPÊCHE UN PROJET DE PARTIR EN SILENCE : IL NE PART PAS.
    Première version de ce filtre : on masquait un projet sans conversation, puis
@@ -1261,76 +1437,12 @@ function chArbreEnPeril(a) {
             || a.alerte_niveau === "agir" || a.alerte_niveau === "bloque");
 }
 
-/* ── LES TROIS TEXTES DE L'INTERRUPTEUR, RÉDIGÉS AU MÊME ENDROIT ──────────────
-   L'infobulle du jeton, la description liée à la case et l'annonce disent la
-   même chose à trois publics (souris, lecteur d'écran, oreille). Elles avaient
-   trois rédactions, quatre vocabulaires et deux registres. Les voici ensemble,
-   pour qu'une correction de mot ne puisse plus n'en corriger qu'un tiers.
-
-   UN SEUL NOM POUR LE CONTRÔLE : « avec conversation », celui qui est écrit à
-   l'écran. Un seul registre : on l'ALLUME, on l'ÉTEINT. Le mot « filtre » n'est
-   plus employé (il n'apparaît nulle part dans l'interface) et le mot « décoche »
-   non plus (il désigne une case, or tout le reste dit un interrupteur).
-   Le mot « conversations » n'apparaît pas non plus comme nom de champ : c'en est
-   un côté serveur, ce n'est pas une notion d'utilisateur. */
-function chPluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
-
-function chTexteMasques(projets, arbres, noms, etat) {
-  let t = chPluriel(projets, "projet masqué", "projets masqués")
-        + " (" + chPluriel(arbres, "arbre", "arbres") + ") : "
-        + noms.join(", ") + ". Aucune conversation Claude n'y travaille.";
-  /* LE SEUL ENDROIT QUI DÉNONCE CE QU'ON PEUT PERDRE. Depuis le retrait de
-     l'exemption, un projet masqué peut contenir du travail non commité. On le
-     dit ici, on le nomme, et on ne s'en remet pas au seul chiffre ambre du
-     jeton : cette phrase est ce que lit un lecteur d'écran. */
-  if (etat && etat.perils)
-    t += " Parmi eux, " + chPluriel(etat.perils, "contient du travail",
-                                    "contiennent du travail")
-       + " qu'on peut perdre — non commité, non poussé ou incohérent : "
-       + etat.nomsPeril.join(", ") + ".";
-  return t + " Éteins « avec conversation » pour les revoir.";
-}
-
-function chTexteInterrupteur(projets, arbres, noms, etat) {
-  let t = "Allumé, n'affiche que les projets où une conversation Claude travaille "
-        + "en ce moment. Une seule exception : un projet dont on ignore le "
-        + "nombre de conversations reste affiché, car on ne masque rien sur un "
-        + "relevé incomplet. Un projet sans conversation est masqué même s'il "
-        + "contient du travail non commité — le compteur le dit et le nomme.";
-  if (projets) t += " En ce moment : " + chTexteMasques(projets, arbres, noms, etat);
-  else t += " En ce moment, aucun projet n'est masqué.";
-  if (etat.inconnus) t += " " + chPluriel(etat.inconnus, "projet reste affiché",
-                                          "projets restent affichés")
-                        + " au titre de l'exception.";
-  return t;
-}
-
-/* L'ANNONCE, ET LA BRANCHE QUI MANQUAIT.
-   « Aucun projet masqué : une conversation travaille dans chacun d'eux » était
-   affirmé y compris quand le serveur avait répondu « je ne sais pas ». C'était
-   le seul endroit du contrôle où la garantie se perdait : une affirmation
-   catégorique sur une donnée absente, et probablement fausse. Elle n'est
-   désormais prononcée que lorsqu'elle est DÉMONTRÉE — aucun masqué, aucun
-   inconnu. Sinon on dit ce qu'on sait, et pourquoi. */
-function chRaisonsFiltre(m) {
-  if (!m.projets && !m.inconnus)
-    return "aucun projet masqué : une conversation travaille dans chacun d'eux.";
-  const bouts = [];
-  bouts.push(m.projets ? chPluriel(m.projets, "projet masqué", "projets masqués")
-                         + " (" + chPluriel(m.arbres, "arbre", "arbres") + ")"
-                       : "aucun projet masqué");
-  /* Annoncé AVANT le motif « inconnu » : c'est la seule information de cette
-     phrase qui puisse coûter du travail à celui qui l'entend. */
-  if (m.perils)
-    bouts.push("dont " + chPluriel(m.perils, "avec du travail qu'on peut perdre",
-                                   "avec du travail qu'on peut perdre")
-               + " : " + m.nomsPeril.join(", "));
-  if (m.inconnus)
-    bouts.push(chPluriel(m.inconnus, "projet reste affiché",
-                         "projets restent affichés")
-               + " : on ignore combien de conversations y travaillent");
-  return bouts.join(" ; ") + ".";
-}
+/* LES TEXTES DE L'INTERRUPTEUR ONT SUIVI L'INTERRUPTEUR. Cet onglet rédigeait
+   son infobulle, sa description liée et son annonce ; les trois vivent
+   maintenant en tête de fichier, avec `texteFiltre` et l'aveu du chrome, parce
+   qu'elles doivent parler des DEUX écrans. Ce que cet onglet garde, c'est ce
+   qu'il est seul à savoir : quels projets il a masqués, et lesquels contenaient
+   du travail qu'on peut perdre. Il le dépose dans `bilanFiltre.chantier`. */
 
 function majBadgeChantier(n) {
   const b = $("#ch-badge");
@@ -1358,17 +1470,19 @@ let chEnVol = false;             // un relevé est en route : voir majVeilleChan
    Le focus est le plus grave — WCAG 2.4.3. Mesuré en Chromium instrumenté avant
    correctif : `focus avant re-rendu auto : ch-relire` → `focus après : BODY`.
    Tant qu'un relevé ne partait que d'un clic, on pouvait rustiner au cas par
-   cas, et c'est ce qui avait été fait : le chemin de l'interrupteur se
-   refocalisait lui-même, celui du bouton « rafraîchir » non. Depuis que le flux
-   déclenche un relevé SANS AUCUN GESTE (voir `majVeilleChantier`), la rustine
-   par chemin ne tient plus : un utilisateur au clavier posé sur un chevron de
-   dépôt perd sa place parce qu'une conversation a démarré ailleurs sur la
-   machine, dans un projet qu'il ne regardait même pas.
+   cas. Depuis que le flux déclenche un relevé SANS AUCUN GESTE (voir
+   `majVeilleChantier`), la rustine par chemin ne tient plus : un utilisateur au
+   clavier posé sur un chevron de dépôt perd sa place parce qu'une conversation
+   a démarré ailleurs sur la machine, dans un projet qu'il ne regardait même pas.
+
+   L'INTERRUPTEUR N'EST PLUS DANS CETTE LISTE, et c'est un gain : depuis qu'il
+   vit dans le chrome, il n'est plus reconstruit, donc plus jamais perdu. Ce qui
+   reste à rattraper, ce sont les contrôles que CE PANNEAU fabrique.
 
    La restauration porte donc sur le RENDU lui-même, et sur l'élément focalisé
    quel qu'il soit : on note son `id` s'il est dans la zone, on refocalise après.
    C'est ce qui oblige tout contrôle reconstruit à porter un `id` stable —
-   `ch-avec-conv`, `ch-relire`, `ch-aide`, et les deux chevrons de chaque dépôt
+   `ch-relire`, `ch-aide`, et les deux chevrons de chaque dépôt
    (`…-plier`, `…-reserve`). Un contrôle sans `id` n'est pas rattrapable : c'est
    le prix de cette approche, et il est écrit ici pour qu'on s'en souvienne en
    ajoutant le prochain bouton.
@@ -1491,10 +1605,10 @@ function majVeilleChantier(snap) {
   }
 }
 
-// Ce que le dernier rendu a effectivement retiré de l'écran, et ce que ce retrait
-// emporte avec lui. Lu par l'annonce de l'interrupteur, qui doit savoir distinguer
-// « rien à masquer » de « je ne sais pas », et dire lesquels des masqués
-// contiennent du travail qu'on peut perdre.
+// Ce que le dernier rendu de CET ONGLET a retiré, et ce que ce retrait emporte.
+// Depuis que l'aveu vit dans le chrome, ce bilan-là ne sert plus qu'à l'état vide
+// du panneau — le seul texte que cet onglet écrit encore lui-même sur le sujet.
+// Ce qui part vers le chrome est `bilanFiltre.chantier`, calculé au même endroit.
 let chDernierMasque = { projets: 0, arbres: 0, perils: 0, nomsPeril: [],
                         inconnus: 0 };
 
@@ -1527,9 +1641,12 @@ function rendChantier(d) {
       .map(dep => ({ ...dep, count: dep.arbres.length }));
     if (!depots.length) continue;
     const arbres = depots.flatMap(dep => dep.arbres);
-    /* LE PRÉDICAT DE MASQUAGE — trois conditions, dont une EXEMPTION.
+    /* LE PRÉDICAT DE MASQUAGE — `avecConv` ET `g.conversations === 0`.
+       `avecConv` est l'état GLOBAL du chrome (voir sa doctrine en tête de
+       fichier) : cet onglet ne possède plus son interrupteur, il obéit à celui
+       de la barre du haut, qui gouverne aussi l'écran d'accueil.
 
-       (1) `g.conversations === 0`. La comparaison est STRICTE, jamais
+       `g.conversations === 0`. La comparaison est STRICTE, jamais
            `!g.conversations`. Le champ vaut `null` quand l'instantané des
            conversations était indisponible au moment du relevé — le serveur dit
            alors « je ne sais pas », et non « aucune » — et `undefined` face à un
@@ -1566,7 +1683,7 @@ function rendChantier(d) {
        contiennent du travail qu'on peut perdre, et les nomme. Rien ne disparaît
        en silence : ce qui disparaît, l'écran le dit. */
     const inconnu = typeof g.conversations !== "number";
-    const masque = chAvecConv && g.conversations === 0;
+    const masque = avecConv && g.conversations === 0;
     projets.push({ g, depots, arbres, masque, inconnu,
                    peril: masque && arbres.some(chArbreEnPeril) });
   }
@@ -1575,10 +1692,21 @@ function rendChantier(d) {
   const arbresMontres = montres.flatMap(p => p.arbres);
   const arbresCaches = caches.flatMap(p => p.arbres);
   const perils = caches.filter(p => p.peril);
+  const nomsCaches = [...new Set(caches.map(p => p.g.project))];
   chDernierMasque = { projets: caches.length, arbres: arbresCaches.length,
                       perils: perils.length,
                       nomsPeril: perils.map(p => p.g.project),
                       inconnus: projets.filter(p => p.inconnu).length };
+  // Ce que cet onglet vient de retirer part vers l'aveu du chrome, seul endroit
+  // de la page où le masquage se dit désormais. `inconnu` n'est vrai que si
+  // AUCUN projet n'a de compte connu : un seul compte connu suffit à ce que le
+  // filtre ait un sens, et les inconnus restent affichés de toute façon.
+  bilanFiltre.chantier = {
+    projets: caches.length, noms: nomsCaches,
+    perils: perils.length, nomsPeril: perils.map(p => p.g.project),
+    inconnu: projets.length > 0 && projets.every(p => p.inconnu),
+  };
+  majAveuFiltre();
 
   // `main` et `develop` ne sont pas des chantiers : on n'y travaille pas, on n'y
   // a rien à libérer, et leur ligne occupait un tiers des dépôts PROJET_A. Elles
@@ -1640,49 +1768,17 @@ function rendChantier(d) {
     tete.append(c);
   }
 
-  /* ── L'AVEU DU FILTRE ─────────────────────────────────────────────────────
-     Même grammaire que l'aveu du socle juste au-dessus, et pour la même raison —
-     « N socles masqués », « N projets masqués » : deux fois le même mot pour la
-     même idée, parce que ce sont deux fois la même idée. La rédaction précédente
-     disait « N projets sans conversation », qui se lit comme une observation sur
-     le monde alors que c'est un aveu sur l'écran ; le motif est dans l'infobulle
-     et dans le texte lié, sa place.
-
-     Le compteur `.ch-cpt.masque` existe déjà mais il compte les lignes socle et
-     RIEN D'AUTRE : on ne le détourne pas, on en pose un second à côté, dans la
-     même encre la plus discrète, parce qu'un projet retiré de la liste n'est pas
-     une alerte.
-
-     Ce jeton ne disparaît JAMAIS quand il y a quelque chose à avouer : il est le
-     seul endroit de la barre qui dise que l'écran ne montre pas tout.
-
-     UN SEUL JETON, ET UN SUFFIXE AMBRE DEDANS. Il y avait eu un second jeton
-     ambre à côté (« N masqués demandent un geste »), supprimé pour trois raisons
-     qui tenaient : il comptait des arbres à côté d'un jeton qui compte des
-     projets, il était le seul entièrement en pigment d'une barre qui déborde, et
-     il n'existait ni au clavier ni au lecteur d'écran. Le retrait de l'exemption
-     rend de nouveau nécessaire de dénoncer le travail masqué — mais pas de
-     ressusciter ce jeton-là. Le nombre entre DANS celui-ci, en ambre sur le seul
-     chiffre, comme tous les autres compteurs de la barre : même unité que son
-     hôte (des projets), une place de moins, et la substance vit dans le `title`
-     et dans la description liée à la case, donc au clavier aussi. */
-  const nomsCaches = [...new Set(caches.map(p => p.g.project))];
-  if (caches.length) {
-    const c = el("span", "ch-cpt masque");
-    c.id = "ch-masque-conv";
-    c.append(el("b", null, String(caches.length)),
-             el("span", null, caches.length > 1 ? "projets masqués"
-                                                : "projet masqué"));
-    if (perils.length) {
-      const p = el("b", "peril", "⚠" + perils.length);
-      attr(p, "aria-hidden", "true");   // la phrase du `title` le dit en toutes lettres
-      c.append(p);
-    }
-    attr(c, "title", chTexteMasques(caches.length, arbresCaches.length,
-                                    nomsCaches, chDernierMasque));
-    tete.append(c);
-  }
-
+  /* ── L'AVEU A DÉMÉNAGÉ DANS LE CHROME, AVEC L'INTERRUPTEUR ────────────────
+     Cette barre a porté le jeton `#ch-masque-conv` — « N projets masqués ⚠N » —
+     tant que l'interrupteur vivait ici. Il gouverne maintenant DEUX écrans
+     depuis le bandeau du haut, et son aveu l'a suivi : le laisser ici en aurait
+     fait un second nombre à tenir d'accord avec celui du chrome, sur un écran
+     où les deux auraient été visibles ensemble. Rien n'est perdu — le compte,
+     les noms, le ⚠ des projets masqués contenant du travail qu'on peut perdre,
+     tout est publié dans `bilanFiltre.chantier` quelques lignes plus haut et
+     rendu par `majAveuFiltre`, y compris pour le lecteur d'écran.
+     Ce que cette barre garde, c'est l'aveu qui n'appartient qu'à elle : les
+     lignes socle, juste au-dessus. */
   const droite = el("span", "droite");
   const frais = el("span", "ch-frais");
   if (d.age_s == null) frais.textContent = "";
@@ -1707,87 +1803,24 @@ function rendChantier(d) {
       + "conversation vivante ne sont pas distingués. Ils apparaissent en réserve "
       + "ou en non commité au lieu d'en cours. Rafraîchis le relevé.");
   }
-  /* ── L'INTERRUPTEUR « avec conversation » ─────────────────────────────────
-     La grammaire visuelle est celle de la bascule de thème — un rail, un
-     curseur — parce que c'est le seul contrôle à deux positions du produit et
-     qu'un commutateur dit ce qu'une case carrée ne dit pas : que ça a deux
-     positions, et qu'on peut revenir. Le label porte donc les DEUX classes :
-     `bascule` apporte la géométrie partagée (board.css), `ch-bascule` n'apporte
-     que ce qui est propre à cet interrupteur — son état, sa boîte, son survol,
-     son anneau. Une seule géométrie pour les deux commutateurs du produit, et
-     aucune ligne recopiée.
+  /* ── L'INTERRUPTEUR A QUITTÉ CETTE BARRE POUR LE CHROME ───────────────────
+     Il a vécu ici, entre la fraîcheur du relevé et les deux boutons, tant qu'il
+     ne filtrait que cet onglet. Or l'écran qu'on regarde en arrivant est
+     l'accueil, qui affiche une colonne par projet DÉCLARÉ — conversation ou
+     pas — et c'est là que les projets sur lesquels on ne travaille pas
+     encombrent le plus. Un même besoin sur deux écrans ne se règle pas avec
+     deux contrôles : il se règle avec un contrôle global. Il est donc écrit en
+     dur dans board.html, dans `.ch-ctrl`, à côté de la bascule de thème.
 
-     UNE CASE À COCHER NATIVE, et pas un `role="switch"` ni un `aria-pressed`.
-     Le dépôt n'a aucun rôle ARIA aujourd'hui et n'a pas à en gagner un pour un
-     contrôle que HTML sait déjà exprimer : une case est annoncée « coché / non
-     coché », se pilote à la barre d'espace, entre dans la tabulation, et son
-     état vit dans le DOM au lieu d'un attribut qu'il faudrait tenir à jour —
-     exactement l'argument qui fait piloter le chevron des dépôts par
-     `aria-expanded` plutôt que par une classe. Une seule source de vérité pour
-     l'état et pour l'apparence.
-
-     ET LE LIBELLÉ EST ÉCRIT. Les glyphes ☾ / ☀ ont déjà appris à cet écran
-     qu'un pictogramme non mesuré dans les polices embarquées est un pari
-     (cf. board.css) ; rien ici n'est un pictogramme.
-
-     UN SEUL MOT POUR CE CONTRÔLE, PARTOUT. Il s'appelle « avec conversation »,
-     c'est écrit dessus, et c'est le nom employé dans l'annonce, dans l'infobulle
-     et dans l'état vide. On ne dit plus « le filtre » (un mot que l'écran
-     n'écrit nulle part) ni « décoche » (un mot de case à cocher, alors que le
-     dessin, l'infobulle et cette feuille disent tous « interrupteur »). Le
-     registre est celui d'un interrupteur : on l'ALLUME et on l'ÉTEINT. */
-  const bascule = el("label", "bascule ch-bascule");
-  const inp = el("input");
-  inp.type = "checkbox";
-  inp.id = "ch-avec-conv";
-  inp.checked = chAvecConv;
-  /* LA SUBSTANCE DESCEND DANS LE DOM, ET LA DESCRIPTION SE POSE SUR L'INPUT.
-     Elle ne vivait que dans des `title`, et un `title` sur un `<span>` ou sur un
-     `<label>` n'est atteignable ni au clavier ni au lecteur d'écran — vérifié :
-     « sans aria-describedby -> name="avec conversation" desc="" ». Le texte
-     existe donc pour de bon, dans un élément hors-vue référencé par
-     `aria-describedby`, et il porte ce qu'on veut vraiment savoir devant un
-     filtre : ce qu'il masque, lesquels, et ce qu'il ne masquera jamais.
-
-     L'élément est posé DANS `.ch-tete` et pas dans le `<label>` : le contenu du
-     label est le NOM accessible de la case, et y verser trois phrases ferait
-     annoncer « avec conversation N'afficher que les projets où… » à chaque
-     tabulation. Nom court, description longue, chacun à sa place.
-
-     Le `title` reste sur le `<label>` — pour la souris, qui n'a pas d'autre
-     accès — avec exactement le même texte. Une seule fonction le rédige, pour
-     que les deux ne puissent pas diverger. */
-  const notice = chTexteInterrupteur(caches.length, arbresCaches.length,
-                                     nomsCaches, chDernierMasque);
-  const desc = el("span", "ch-hors-vue", notice);
-  desc.id = "ch-conv-desc";
-  attr(bascule, "title", notice);
-  attr(inp, "aria-describedby", "ch-conv-desc");
-  const rail = el("span", "rail");
-  attr(rail, "aria-hidden", "true");
-  bascule.append(inp, rail, el("span", "txt", "avec conversation"));
-  inp.onchange = () => {
-    chAvecConv = inp.checked;
-    if (!chData) return;
-    // Même passage que tous les autres re-rendus : le défilement et le focus
-    // sont rendus à l'utilisateur, et l'interrupteur reconstruit porte le même
-    // `id`, donc c'est bien lui qui reprend le focus.
-    chGarderLaPlace(() => rendChantier(chData));
-    /* LE CHANGEMENT DOIT S'ENTENDRE, pas seulement se voir : c'est le nombre de
-       projets listés qui vient de changer, et rien dans la page ne l'annonce à
-       qui ne la regarde pas. `#avis` est une région live que `avis()` maintient
-       DÉSORMAIS en permanence dans l'arbre d'accessibilité — ça n'a pas toujours
-       été vrai, voir le commentaire d'`avis()`, qui porte la mesure.
-       Et ce n'est pas la confirmation vide que ce commentaire interdit : la
-       charge utile, ici, c'est le nombre de projets qui viennent de quitter
-       l'écran. Aucun nom de projet n'y est interpolé — `avis()` écrit en
-       innerHTML, et un nom de projet vient d'un fichier de config. */
-    avis(chAvecConv ? "<b>« avec conversation » allumé</b> — "
-                      + chRaisonsFiltre(chDernierMasque)
-                    : "<b>« avec conversation » éteint</b> — tous les projets "
-                      + "sont listés.");
-  };
-
+     TROIS CHOSES QUE CE DÉMÉNAGEMENT SIMPLIFIE, et c'est pourquoi il est bon
+     au-delà de la demande :
+       · le chrome n'est JAMAIS reconstruit, donc l'interrupteur ne peut plus
+         emporter le focus avec lui à chaque re-rendu — `chGarderLaPlace` n'a
+         plus à le rattraper, il n'a plus jamais disparu ;
+       · une barre de moins à faire déborder : `.ch-tete` rendait 168 px de
+         contrôle et 125 px d'aveu ;
+       · un seul état pour les deux écrans, donc aucun moyen de les faire
+         diverger. */
   const btn = el("button", "ch-relire", "rafraîchir");
   btn.type = "button";
   btn.id = "ch-relire";            // rattrapable par chGarderLaPlace
@@ -1807,11 +1840,8 @@ function rendChantier(d) {
     requestAnimationFrame(() =>
       $("#aide-chantier")?.scrollIntoView({ block: "start" }));
   };
-  // L'interrupteur se pose entre la fraîcheur du relevé et les deux boutons :
-  // il dit CE QUE l'écran montre, comme la date de relevé dit DE QUAND il date.
-  // Les deux commandes restent groupées à leur droite.
-  droite.append(frais, bascule, btn, aide);
-  tete.append(droite, desc);
+  droite.append(frais, btn, aide);
+  tete.append(droite);
   zone.append(tete);
 
   if (d.degrade) zone.append(el("p", "ch-degrade", d.degrade));
@@ -1837,10 +1867,11 @@ function rendChantier(d) {
              el("b", null, caches.length
                 + (caches.length > 1 ? " projets sont masqués" : " projet est masqué")),
              document.createTextNode(
-               " — éteins « avec conversation » ci-dessus pour les revoir."));
+               " — éteins « avec conversation », en haut à droite, pour les "
+               + "revoir."));
     if (chDernierMasque.perils) {
       const a = el("b", "peril");
-      a.textContent = "⚠ " + chPluriel(chDernierMasque.perils,
+      a.textContent = "⚠ " + pluriel(chDernierMasque.perils,
                                        "de ces projets contient du travail",
                                        "de ces projets contiennent du travail")
                     + " qu'on peut perdre : " + chDernierMasque.nomsPeril.join(", ") + ".";
@@ -2318,6 +2349,9 @@ function ongler(quel) {
   // Le bandeau d'attention ne concerne que les conversations : ailleurs il
   // mentirait sur ce que l'écran montre.
   $("#attention").hidden = quel !== "board";
+  // L'aveu du chrome décrit l'onglet VISIBLE : il change donc de sujet ici, avant
+  // même que le nouvel onglet ait rendu quoi que ce soit.
+  majAveuFiltre();
   if (quel === "histo") chargerHistorique();
   if (quel === "pr") chargerPR(false);
   if (quel === "chantier") {
@@ -2444,6 +2478,61 @@ function poseTheme(t) {
 poseTheme(litTheme());
 $("#btn-theme").onclick = () =>
   poseTheme(document.documentElement.dataset.theme === "clair" ? "sombre" : "clair");
+
+/* ─────────── L'INTERRUPTEUR « avec conversation », CÂBLÉ UNE FOIS ────────────
+   Le contrôle est statique (board.html) : ce câblage a donc lieu au chargement
+   et jamais plus. C'est toute la différence avec la version qui vivait dans
+   `.ch-tete`, recâblée à chaque rendu.
+
+   LA CASE EST FORCÉE À L'ALLUMAGE, et ce n'est pas redondant avec l'attribut
+   `checked` du HTML. Les navigateurs restaurent l'état des formulaires après un
+   rechargement (F5, retour arrière) : sans cette ligne, éteindre l'interrupteur
+   puis recharger la page le rendrait éteint, c'est-à-dire PERSISTÉ — ce que la
+   doctrine d'`avecConv` interdit. `autocomplete="off"` le dit déjà au
+   navigateur ; cette ligne le garantit quoi qu'il en fasse.
+
+   LES DEUX ÉCRANS SE RE-RENDENT, y compris celui qui est caché. Ni l'un ni
+   l'autre ne demande quoi que ce soit au serveur : le filtre est un tri de
+   données déjà en mémoire (`dernier` pour l'accueil, `chData` pour le
+   Chantier). Les re-rendre tous les deux tout de suite coûte deux passes de DOM
+   et supprime toute possibilité qu'un onglet montre un état et l'autre un
+   autre — c'est moins cher, et plus sûr, qu'un drapeau de péremption de plus. */
+const fcCase = $("#fc-case");
+fcCase.checked = true;
+avecConv = true;
+fcCase.onchange = () => {
+  avecConv = fcCase.checked;
+  if (dernier) rendBoard(dernier);
+  if (chData) chGarderLaPlace(() => rendChantier(chData));
+  majAveuFiltre();
+  /* LE CHANGEMENT DOIT S'ENTENDRE, pas seulement se voir : c'est le nombre de
+     projets affichés qui vient de changer, et rien dans la page ne l'annonce à
+     qui ne la regarde pas. `#avis` est une région live que `avis()` maintient
+     en permanence dans l'arbre d'accessibilité — voir son commentaire, qui porte
+     la mesure. Ce n'est pas la confirmation vide que ce commentaire interdit :
+     la charge utile, c'est ce qui vient de quitter l'écran.
+     L'annonce décrit l'onglet VISIBLE, comme l'aveu : annoncer le bilan d'un
+     écran qu'on ne regarde pas serait un chiffre de plus à ne pas pouvoir
+     vérifier. Aucun nom de projet n'est interpolé dans `avis()`, qui écrit en
+     innerHTML — les noms vivent dans l'aveu et dans sa description, en texte. */
+  const b = bilanFiltre[ongletActif] || bilanFiltre.board;
+  if (!avecConv) {
+    avis("<b>« avec conversation » éteint</b> — tous les projets sont affichés.");
+  } else if (b.inconnu) {
+    avis("<b>« avec conversation » allumé</b> — rien n'est masqué : le serveur "
+         + "ne sait pas quelles conversations tournent.");
+  } else if (!b.projets) {
+    avis("<b>« avec conversation » allumé</b> — aucun projet masqué : une "
+         + "conversation travaille dans chacun d'eux.");
+  } else {
+    avis("<b>« avec conversation » allumé</b> — "
+         + pluriel(b.projets, "projet masqué", "projets masqués")
+         + (b.perils ? ", dont " + b.perils + " avec du travail qu'on peut perdre"
+                     : "") + ".");
+  }
+};
+// L'aveu doit dire ce que montre l'onglet qu'on vient d'ouvrir, pas le précédent.
+majAveuFiltre();
 
 
 /* ═══════════════════ fiche d'une conversation ════════════════════════════
