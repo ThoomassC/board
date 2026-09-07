@@ -150,6 +150,15 @@
   text-shadow:var(--neon-txt);
 }
 .ch-hd .ct{font-size:11.5px; color:var(--t3)}
+/* « projet neuf — affiché jusqu'à sa première conversation » (board.js,
+   MOT_NEUF). Même rôle et même phrase que la note de la colonne vide sur
+   l'accueil : dire pourquoi ce bloc est encore là alors que le filtre est
+   allumé. Elle prend la graisse et la teinte du compteur d'arbres à sa gauche —
+   c'est une mention de la même famille, pas un badge — et se contente de
+   l'écart du flex pour s'en détacher. `min-width:0` parce que .ch-hd est un
+   flex : sans lui, une phrase de cette longueur pousserait le compteur hors du
+   bloc au lieu de se couper elle-même. */
+.ch-hd .neuf{font-size:11.5px; color:var(--t3); min-width:0}
 
 .ch-depot{margin:0 0 14px}
 /* `center` et non `baseline` : une forme géométrique n'a pas de vraie ligne de

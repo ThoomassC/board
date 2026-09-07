@@ -114,7 +114,8 @@ LIBELLE_PR = {"conflit": "CONFLIT", "a_corriger": "À CORRIGER", "a_relire": "À
               "dort": "DORT", "prete": "PRÊTE", "en_attente": "EN ATTENTE",
               "brouillon": "BROUILLON"}
 
-# `data` ne contient JAMAIS `conversations` : voir `_compter_conversations`.
+# `data` ne contient JAMAIS `conversations` ni `jamais_servi` : voir
+# `_deriver_a_l_appel`. Les deux appartiennent à l'APPEL, pas au relevé.
 # `signature` est celle du lot de sessions qui a produit `data` — jamais None
 # quand `data` ne l'est pas, puisque le cache refuse les relevés dégradés.
 _CACHE = {"at": 0.0, "data": None, "signature": None}
@@ -626,6 +627,70 @@ def _compter_conversations(groupes, config, sessions):
             for g in groupes]
 
 
+def _neufs_valides(neufs):
+    """L'ensemble des noms de projets « jamais servis », lu DÉFENSIVEMENT.
+
+    `neufs` traverse tout le chemin depuis `layout.json`, un fichier que
+    l'utilisateur édite à la main et que le serveur relit à chaque démarrage.
+    On lit le type promis par le contrat — une liste de chaînes — ou on ne lit
+    rien : une chaîne (`"Alphabet"`) ou un dictionnaire répondraient à `in` sans
+    lever, et marqueraient le mauvais projet en silence. `None` (« l'appelant ne
+    passe pas la liste ») rend le même ensemble vide qu'une liste vide : ici,
+    contrairement à `conversations`, il n'y a rien à distinguer — le drapeau dit
+    un FAIT de cycle de vie, et « on ne sait pas » se dit « pas neuf », soit la
+    valeur qui ne fait rien apparaître.
+    """
+    if not isinstance(neufs, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(n for n in neufs if isinstance(n, str) and n)
+
+
+def _marquer_jamais_servi(copies, neufs):
+    """Pose `jamais_servi` sur des groupes DÉJÀ COPIÉS — écriture EN PLACE.
+
+    Ce que le drapeau dit : ce projet a été adopté et aucune conversation Claude
+    n'y a encore été observée. Le filtre « avec conversation » masquait un projet
+    dès son adoption — il n'a évidemment aucune conversation —, lui retirant la
+    colonne vide qui porte le nom de son lanceur `claude-<projet>`. Le serveur
+    publie donc le FAIT ; c'est le client qui décide de ne pas masquer dessus.
+    La POLITIQUE d'affichage ne descend pas ici.
+
+    Toujours présent et toujours booléen, comme `conversations_inconnues` :
+    « pas neuf » est une valeur du contrat, jamais l'absence d'une clé. Un client
+    qui lirait une clé absente obtiendrait `undefined`, donc faux, donc le bug
+    qu'on corrige — en silence.
+
+    ÉCRIT EN PLACE, et c'est sûr uniquement parce que l'appelant unique est
+    `_deriver_a_l_appel`, qui vient de recevoir de `_compter_conversations` des
+    dicts neufs lui appartenant. Ne jamais appeler cette fonction sur les groupes
+    du relevé mémorisé : ils sont partagés par tous les appelants (cf.
+    `_compter_conversations`, point 4).
+    """
+    ensemble = _neufs_valides(neufs)
+    for g in copies:
+        g["jamais_servi"] = g.get("project") in ensemble
+    return copies
+
+
+def _deriver_a_l_appel(groupes, config, sessions, neufs):
+    """Les deux champs qui appartiennent à l'APPEL et non au relevé.
+
+    `conversations` et `jamais_servi` sont dérivés au retour de `scan()`, sur ses
+    DEUX chemins — le froid comme celui du cache — et n'entrent jamais dans le
+    relevé mémorisé. Celui-ci est partagé pendant 30 s par tous les appelants,
+    et les deux valeurs changent d'un appelant à l'autre : un projet peut cesser
+    d'être neuf entre deux appels, exactement comme son nombre de conversations
+    peut changer. Ce que le cache ne contient pas ne peut pas être servi périmé.
+
+    Un seul point d'entrée pour les deux, parce que l'ORDRE est un invariant :
+    `_compter_conversations` produit les copies, `_marquer_jamais_servi` y écrit.
+    Les enchaîner ici évite une seconde copie de surface et empêche qu'un futur
+    appelant marque par erreur les groupes du cache.
+    """
+    return _marquer_jamais_servi(
+        _compter_conversations(groupes, config, sessions), neufs)
+
+
 def _signature_sessions(sessions):
     """Ce dont les ÉTATS D'ARBRES dépendent dans l'instantané, et rien d'autre.
 
@@ -706,10 +771,10 @@ def dernier():
     ça. None veut dire « on ne sait pas encore », et le bandeau se contente
     alors de ce qu'il sait — il ne prétend rien.
 
-    Rien à retirer du relevé mémorisé : `conversations` n'y entre jamais (cf.
-    `scan`), donc `dernier()` ne peut pas le servir périmé. C'était douze lignes
-    de commentaire et un filtrage de cinq dicts par seconde pour défaire un
-    travail qu'on venait de faire.
+    Rien à retirer du relevé mémorisé : ni `conversations` ni `jamais_servi` n'y
+    entrent (cf. `_deriver_a_l_appel`), donc `dernier()` ne peut pas les servir
+    périmés. C'était douze lignes de commentaire et un filtrage de cinq dicts
+    par seconde pour défaire un travail qu'on venait de faire.
     """
     with _VERROU:
         if _CACHE["data"] is None or (time.time() - _CACHE["at"]) >= TTL:
@@ -719,22 +784,23 @@ def dernier():
         return d
 
 
-def _servir_du_cache(config, sessions, maintenant):
+def _servir_du_cache(config, sessions, maintenant, neufs):
     """Le relevé mémorisé, habillé pour CET appelant. À appeler sous `_VERROU`.
 
-    `conversations` est dérivé ici, jamais lu : le cache ne le porte pas.
-    `conversations_inconnues`, lui, vient du relevé tel quel — c'est une
-    propriété du relevé, pas de l'appel (cf. `_compter_conversations`, point 3),
-    et le cache ne mémorise que des relevés complets.
+    `conversations` et `jamais_servi` sont dérivés ici, jamais lus : le cache ne
+    les porte pas. `conversations_inconnues`, lui, vient du relevé tel quel —
+    c'est une propriété du relevé, pas de l'appel (cf. `_compter_conversations`,
+    point 3), et le cache ne mémorise que des relevés complets.
     """
     d = dict(_CACHE["data"])
     d["age_s"] = int(time.time() - _CACHE["at"])
     d["now"] = maintenant
-    d["groupes"] = _compter_conversations(d.get("groupes") or [], config, sessions)
+    d["groupes"] = _deriver_a_l_appel(d.get("groupes") or [], config, sessions,
+                                      neufs)
     return d
 
 
-def scan(config, sessions=None, us_de=None, force=False):
+def scan(config, sessions=None, us_de=None, force=False, neufs=None):
     """L'inventaire complet, servi depuis un cache de 30 s.
 
     `sessions` : la liste des sessions du dernier instantané. `None` signifie
@@ -751,6 +817,12 @@ def scan(config, sessions=None, us_de=None, force=False):
 
     `us_de` : la règle d'extraction du n° d'US, injectée par le serveur pour
     qu'il n'en existe qu'une seule implémentation (cf. docs/SCHEMA.md).
+
+    `neufs` : les noms des projets adoptés qu'aucune conversation n'a encore vus
+    (`layout.json`, clé `neufs`). Passé À CHAQUE APPEL par le serveur, comme
+    `sessions`, et jamais mémorisé dans le relevé : ce module ne lit pas
+    `layout.json` et n'a rien à retenir de ce fait-là. Il en dérive le
+    `jamais_servi` de chaque groupe (cf. `_deriver_a_l_appel`).
     """
     maintenant = int(time.time())
     # Un `force` accepte un relevé de moins de 2 s, un appel normal de moins de
@@ -771,7 +843,7 @@ def scan(config, sessions=None, us_de=None, force=False):
             if (_CACHE["data"] is not None
                     and (time.time() - _CACHE["at"]) < fenetre
                     and (not force or _meme_instantane(signature))):
-                return _servir_du_cache(config, sessions, maintenant)
+                return _servir_du_cache(config, sessions, maintenant, neufs)
             if not _EN_COURS["balayages"] or attentes >= ATTENTES_MAX:
                 break
             # UN BALAYAGE TOURNE DÉJÀ : on attend son résultat au lieu d'en
@@ -797,7 +869,8 @@ def scan(config, sessions=None, us_de=None, force=False):
         _EN_COURS["balayages"] += 1
 
     try:
-        return _balayer_et_memoriser(config, sessions, us_de, maintenant, signature)
+        return _balayer_et_memoriser(config, sessions, us_de, maintenant,
+                                     signature, neufs)
     finally:
         # Y COMPRIS SUR ÉCHEC : un balayage qui lève doit réveiller ceux qui
         # l'attendaient, sinon ils patientent pour rien avant de repartir.
@@ -806,7 +879,7 @@ def scan(config, sessions=None, us_de=None, force=False):
             _VERROU.notify_all()
 
 
-def _balayer_et_memoriser(config, sessions, us_de, maintenant, signature):
+def _balayer_et_memoriser(config, sessions, us_de, maintenant, signature, neufs):
     """Le chemin froid : balayage git, mise en cache, réponse de l'appelant.
 
     Tourne HORS du verrou — un balayage dure 155-164 ms et tient 8 processus
@@ -825,11 +898,11 @@ def _balayer_et_memoriser(config, sessions, us_de, maintenant, signature):
                 "age_s": 0, "degrade": degrade,
                 "conversations_inconnues": sessions is None}
 
-    # LES GROUPES MÉMORISÉS NE PORTENT PAS `conversations`, et c'est ce qui rend
-    # l'invariant vrai PAR CONSTRUCTION plutôt que par vigilance : ce que le
-    # cache ne contient pas ne peut pas être servi périmé à l'appelant suivant.
-    # Le comptage est dérivé au retour, ici comme sur le chemin du cache — une
-    # seule fonction, deux chemins, la même règle.
+    # LES GROUPES MÉMORISÉS NE PORTENT NI `conversations` NI `jamais_servi`, et
+    # c'est ce qui rend l'invariant vrai PAR CONSTRUCTION plutôt que par
+    # vigilance : ce que le cache ne contient pas ne peut pas être servi périmé
+    # à l'appelant suivant. Les deux sont dérivés au retour, ici comme sur le
+    # chemin du cache — une seule fonction, deux chemins, la même règle.
     groupes = _habiller(arbres, config, maintenant)
     compteurs = {e: sum(1 for a in arbres if a["etat"] == e) for e in ETATS}
     liberables = sum(1 for a in arbres if a.get("liberable"))
@@ -880,9 +953,9 @@ def _balayer_et_memoriser(config, sessions, us_de, maintenant, signature):
             _CACHE["signature"] = signature
     # La réponse de CET appelant, dérivée du relevé qu'on vient de mémoriser.
     # `dict(data)` puis remplacement de `groupes` : le relevé mémorisé ne doit
-    # pas hériter de la clé qu'on vient de refuser de lui donner.
+    # pas hériter des clés qu'on vient de refuser de lui donner.
     reponse = dict(data)
-    reponse["groupes"] = _compter_conversations(groupes, config, sessions)
+    reponse["groupes"] = _deriver_a_l_appel(groupes, config, sessions, neufs)
     return reponse
 
 
@@ -976,6 +1049,15 @@ def main():
     # coûte deux lectures de cache et attrape une régression que l'affichage
     # ci-dessus, tout vert, ne montrerait jamais.
     sans = scan(config, sessions=None)
+
+    # `jamais_servi` : même doctrine que `conversations` — dérivé à l'appel,
+    # jamais mémorisé. On marque un projet RÉEL de la config pour que le
+    # rattachement soit exercé pour de bon ; sans projet, le contrôle
+    # s'auto-déclare vide plutôt que de passer pour de mauvaises raisons.
+    premier = (avec["groupes"][0]["project"] if avec["groupes"] else None)
+    marque = scan(config, sessions=[], neufs=[premier] if premier else [])
+    # LU EN DERNIER, après l'appel qui marque : c'est le seul moment où une
+    # écriture en place dans les groupes du cache serait visible.
     memorise = (_CACHE["data"] or {}).get("groupes") or []
     controles = [
         ("un entier quand on sait",
@@ -989,6 +1071,15 @@ def main():
         ("une rafale de `force` à même signature ne rebalaie pas",
          rafale_gratuite),
         ("un `force` à signature différente rebalaie", autre_rebalaye),
+        ("`jamais_servi` est présent et booléen sur chaque groupe",
+         all(g.get("jamais_servi") in (True, False) for g in avec["groupes"])),
+        ("faux par défaut, quand aucun projet n'est neuf",
+         all(g["jamais_servi"] is False for g in avec["groupes"])),
+        ("le relevé mémorisé ne porte pas `jamais_servi`",
+         all("jamais_servi" not in g for g in memorise)),
+        ("un `neufs` nommant un projet ne marque QUE celui-là",
+         premier is None or [g["project"] for g in marque["groupes"]
+                             if g["jamais_servi"]] == [premier]),
     ]
     for libelle, ok in controles:
         print("  %s %s" % ("OK  " if ok else "ÉCHEC", libelle))

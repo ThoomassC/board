@@ -8,7 +8,8 @@ Racine d'exécution : `~/.claude/board/`  (créée par install.sh, jamais versio
     ~/.claude/board/
       config.json                 configuration locale (voir plus bas)
       account.json                limites 5h / 7j, global au compte
-      layout.json                 ordre manuel des projets et des cartes
+      layout.json                 ordre manuel des projets et des cartes,
+                                  + `neufs` (voir plus bas)
       seen.json                   marquages « vu » par (session_id, state)
       state/<sid>.event.json      écrit par les HOOKS
       state/<sid>.meas.json       écrit par la STATUSLINE
@@ -277,6 +278,130 @@ board au repos — publie le motif, et refuse trois choses :
 au plus une fois par minute (`serveur.plainte`) — la boucle SSE repasse ici
 chaque seconde.
 
+## `layout.json` — ce que l'humain a posé à la main, et les projets NEUFS
+
+    {
+      "projects": ["PROJET_B", "PROJET_A"],   ordre des colonnes, imposé au glisser-déposer
+      "cards": { "PROJET_A": ["a5c7d326-…", "…"] },   ordre des cartes dans une colonne
+      "neufs": ["PROJET_C"]                   projets adoptés, jamais servis
+                                              — ÉCRIT PAR LE SERVEUR SEUL
+    }
+
+Les deux premières clés viennent du client, par `POST /api/layout`, et
+`poser_layout` n'accepte **qu'elles deux**. Le corps de la requête vient du
+navigateur, ce fichier est relu à chaque démarrage, et une clé inconnue y
+resterait pour toujours.
+
+**`neufs` n'est pas dans cette liste blanche** : un `neufs` posté est ignoré
+comme n'importe quelle clé inconnue. Voir plus bas.
+
+### `neufs` — un fait de cycle de vie, pas une préférence d'affichage
+
+Le filtre « avec conversation » de l'onglet Chantier masque les projets sans
+conversation en cours. **Conséquence mesurée** : on découvre un projet du poste,
+on l'adopte, et il disparaît aussitôt — il n'a évidemment aucune conversation.
+Or c'est sa colonne vide qui porte le nom de son lanceur `claude-<projet>` : le
+filtre retirait la porte d'entrée du projet qu'on venait d'ajouter.
+
+**La règle.** Un projet adopté reste visible jusqu'à ce qu'une conversation
+Claude y ait tourné au moins une fois. Ensuite il rejoint le lot commun et
+redevient masquable, **définitivement** — sans quoi il ressortirait du filtre
+chaque fois qu'on ferme sa dernière conversation, soit le contraire du besoin.
+
+Le dépôt refuse de mémoriser les préférences d'affichage, et `avecConv`
+(l'interrupteur lui-même) reste donc non persisté. `neufs` n'en est pas une :
+c'est un fait, du même ordre que `seen.json` ou `archive.json`, et il doit
+survivre au redémarrage du serveur — sinon le projet redevient masquable à la
+première relance et le défaut revient tel quel.
+
+Qui écrit — **le serveur, et personne d'autre** :
+
+    creer_projet()             INSCRIT, et lui seul. Une seule fois par nom.
+    instantane()               RETIRE tout projet où une conversation est vue
+    sessions_connues()         RETIRE de même — c'est le chemin de l'onglet
+                               Chantier, le seul actif quand aucun onglet du
+                               board n'alimente la boucle SSE
+
+Le retrait est **auto-guérissant** : aucun geste de l'utilisateur, aucune
+commande de nettoyage, rien à refaire au prochain démarrage. Il purge dans la
+foulée les **fantômes** — un nom que la configuration ne porte plus —, mais
+uniquement quand `config.json` a pu être lu : `fusion_config()` retombe sur
+`CONFIG_DEFAUT`, dont `projects` est vide, et un fichier momentanément illisible
+ferait sinon passer tous les projets neufs pour des fantômes.
+
+### `jamais_servi` — le drapeau publié, et pourquoi ce nom-là
+
+Chaque groupe de **l'instantané** et chaque groupe de **`/api/chantier`** porte
+`jamais_servi`, un booléen, **toujours présent** : « pas neuf » est une valeur du
+contrat, jamais l'absence d'une clé. Le client ne doit pas avoir à joindre deux
+sources pour savoir s'il peut masquer.
+
+Il ne s'appelle pas `neufs`, et la différence n'est pas cosmétique : `neufs` est
+la liste persistée, `jamais_servi` le drapeau publié. Un `g.neufs` côté client
+rendrait `undefined`, c'est-à-dire faux, c'est-à-dire exactement le bug qu'on
+corrige — en silence. Le dépôt s'est déjà fait prendre une fois à ce jeu
+(`convs` contre `conversations`).
+
+**Le serveur publie le FAIT, le client décide de la POLITIQUE.** `jamais_servi`
+ne dit pas « n'affiche pas le filtre » ; il dit « aucune conversation n'a encore
+tourné ici ». C'est le board qui en tire la règle d'affichage.
+
+Côté Chantier, `jamais_servi` suit exactement la doctrine de `conversations` :
+`chantier.scan(config, sessions, us_de, force, neufs)` le **dérive à chaque
+appel**, sur ses deux chemins, et il **n'entre jamais dans le relevé mémorisé** —
+celui-ci est partagé pendant 30 s par tous les appelants, et un projet peut
+cesser d'être neuf entre deux. `chantier` ne lit pas `layout.json` : le serveur
+lui passe la liste, comme il lui passe `sessions` et `us_de`.
+
+### Les deux trous assumés — la dégradation va vers le VISIBLE
+
+Dans les deux cas ci-dessous, le projet **reste marqué neuf**, donc **reste
+visible**. C'est le sens sûr : le défaut qu'on corrige est une disparition, pas
+une apparition de trop. Ce sont des trous, pas des garanties.
+
+1. **Board fermé.** On n'interroge que les conversations vivantes, jamais
+   l'historique des transcripts. Adopter un projet, y travailler board fermé, et
+   rouvrir le board plus d'une heure après la fin de la conversation
+   (`thresholds.oubli_apres_s`, qui la fait sortir de `sessions()`) laisse le
+   projet « neuf ». Aller lire les transcripts coûterait un couplage plus cher
+   que le trou qu'il bouche.
+2. **Conversations `dead`.** `sessions()` les écarte en amont — elle rend leur
+   fond d'origine aux panes et passe au suivant —, elles n'atteignent donc
+   jamais la purge. Une conversation qui a tourné puis s'est proprement terminée
+   avant le premier passage ne retire rien.
+
+L'**instantané aveugle** (dossier d'états illisible) ne retire personne non
+plus, et ce n'est pas un trou mais la doctrine du fichier : il ne prouve pas
+qu'aucune conversation ne tourne, il prouve qu'on n'a pas pu regarder.
+Déclencher sur une ignorance un retrait irréversible, ce serait perdre pour de
+bon la visibilité d'un projet qu'on vient d'adopter. Il **publie** en revanche
+`jamais_servi`, comme il publie ses colonnes.
+
+### `POST /api/layout` n'écrit JAMAIS `neufs`
+
+L'irréversibilité de « a déjà servi » n'a de valeur que si le navigateur ne peut
+pas la défaire. Recopier la liste du corps de requête donnerait à un simple
+`curl` le droit de réinscrire un projet comme neuf et de le faire ressortir du
+filtre à volonté.
+
+Or **aucun appelant n'en a besoin** : le cycle est piloté de bout en bout par le
+serveur — l'adoption inscrit, l'observation d'une conversation retire — et rien
+dans `board/` ne lit ni n'écrit cette clé. Accepter `neufs` sur cette route
+n'ouvrirait donc qu'une seule chose : le contournement. Une capacité dont
+personne n'a besoin et qui ne sert qu'à défaire un invariant se **supprime**,
+elle ne se borde pas finement. `neufs` est ignoré comme n'importe quelle clé
+inconnue.
+
+`neufs` est lu **défensivement** partout (`serveur.neufs_declares`,
+`chantier._neufs_valides`) : ce fichier s'édite à la main et se perd. Une chaîne
+et un dictionnaire sont les deux formes qui piègent, parce que ni l'une ni
+l'autre ne lève sur un `in` — `"Alpha" in "Alphabet"` est vrai, et
+`"Alpha" in {"Alpha": 1700000000}` aussi, le jour où l'on voudra dater les
+adoptions. On lit le type promis par le contrat, ou on ne lit rien.
+
+Ces invariants sont figés dans **`tests/test_neufs.py`** (côté serveur) et dans
+la classe `ProjetsNeufs` de **`tests/test_chantier.py`** (côté relevé).
+
 ## `GET /api/decouverte?autorise=1` — les projets du poste, proposés
 
 `candidats_projets` ci-dessus ne voit que ce que l'historique lui montre : un
@@ -394,6 +519,7 @@ Un arbre de travail = un dossier portant un `.git` sous une racine de
       "age_s": 0, "now": 1787825169,
       "groupes": [ {"project":"PROJET_A", "accent":"#4EC9A0", "count":10,
                     "conversations": 2,     conversations du projet, ou null
+                    "jamais_servi": false,  adopté, jamais servi — voir layout.json
                     "depots":[ {"repo":"PROJET_A_backend", "count":6,
                                 "arbres":[ ... ]} ]} ]
     }
@@ -551,6 +677,13 @@ une fois par seconde) n'a donc rien à en retirer.
 Ces sept propriétés sont figées dans **`tests/test_chantier.py`**
 (`python3 -m unittest discover -s tests`), y compris le cas du cache-hit sans
 instantané, que l'affichage ne montre jamais.
+
+`jamais_servi` (voir « `layout.json` ») suit la même doctrine et par la même
+fonction — `chantier._deriver_a_l_appel` dérive les deux au retour de `scan()`,
+sur ses deux chemins, et le relevé mémorisé n'en porte aucun. Les deux champs
+répondent pourtant à deux questions distinctes : `conversations === 0` dit qu'il
+n'y a personne **maintenant**, `jamais_servi` dit qu'il n'y a **jamais eu**
+personne. C'est le second qui autorise le client à ne pas masquer le premier.
 
 #### `?force=1` — ce qu'il garantit, et son dédoublonnage
 
