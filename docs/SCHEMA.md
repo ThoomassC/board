@@ -485,7 +485,10 @@ d'une arborescence pathologique, le budget d'un disque lent ou d'un montage
 réseau — cas où aucune profondeur ne borne le temps.
 
 **La profondeur n'est pas un réglage de vitesse**, c'est le budget qui tient le
-temps. Mesures sur ce poste, `~` entier :
+temps. Mesures sur ce poste, `~` entier, avec la configuration réelle — les six
+projets déclarés en excluent une partie. Le tableau de `decouverte.py` mesure la
+même chose configuration NUE et rend donc 21 candidats : les deux se lisent
+ensemble, ce n'est pas une contradiction.
 
     profondeur   candidats   dossiers visités   durée    `degrade`
          4          14              298          15 ms   interrompu

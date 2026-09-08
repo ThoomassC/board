@@ -60,15 +60,20 @@ except Exception:
 # LA PROFONDEUR N'EST PAS UN RÉGLAGE DE VITESSE : c'est le budget qui tient le
 # temps. La choisir trop basse ne fait pas gagner un balayage, elle fait perdre
 # un signal. Mesures sur ce poste, `~` entier, arrêt sur chaque dépôt et
-# `node_modules` exclu :
+# `node_modules` exclu, CONFIGURATION NUE (aucun projet déclaré, donc rien
+# d'exclu par `_couvert` — c'est ce que fait l'auto-vérification en bas de
+# fichier). La même mesure avec la configuration réelle du poste rend 14
+# candidats au lieu de 21 : `docs/SCHEMA.md` publie celle-là, et les deux se
+# lisent ensemble. Deuxième passe, cache disque chaud — la première mesure la
+# lenteur du cache froid, pas celle de la profondeur :
 #
 #     profondeur   candidats   dossiers visités   durée    `degrade`
-#          4           4              295          36 ms   interrompu
-#          6           4              838         112 ms   interrompu
-#          8           4            3 043         324 ms   interrompu
-#         12           4            9 396         276 ms   interrompu
-#         16           4            9 453         263 ms   null
-#         40           4            9 453         220 ms   null
+#          4          21              300          11 ms   interrompu
+#          6          21              843          38 ms   interrompu
+#          8          21            3 049          98 ms   interrompu
+#         12          21            9 402         226 ms   interrompu
+#         16          21            9 459         222 ms   null
+#         40          21            9 459         253 ms   null
 #
 # La liste est complète dès 4 niveaux et ne bouge plus ; en revanche le poste
 # porte des arbres hors dépôt qui descendent jusqu'à ~15 niveaux, si bien qu'une
