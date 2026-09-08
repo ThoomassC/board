@@ -345,10 +345,27 @@ proposerait deux fois sous deux chemins.
 
 ### Les bornes, et ce qu'elles obligent à dire
 
-Deux bornes, `PROFONDEUR_MAX = 8` et `BUDGET_S = 10`. Mesures sur ce poste :
-`~` complet = 2,9 s pour 16 dépôts ; borné à 6 niveaux = 0,42 s pour 15. La
-profondeur protège d'une arborescence pathologique, le budget d'un disque lent
-ou d'un montage réseau — cas où aucune profondeur ne borne le temps.
+Deux bornes, `PROFONDEUR_MAX = 16` et `BUDGET_S = 10`. La profondeur protège
+d'une arborescence pathologique, le budget d'un disque lent ou d'un montage
+réseau — cas où aucune profondeur ne borne le temps.
+
+**La profondeur n'est pas un réglage de vitesse**, c'est le budget qui tient le
+temps. Mesures sur ce poste, `~` entier :
+
+    profondeur   candidats   dossiers visités   durée    `degrade`
+         4          14              298          15 ms   interrompu
+         8          14            3 047         110 ms   interrompu
+        16          14            9 457         275 ms   null
+        40          14            9 457         228 ms   null
+
+La liste est complète dès 4 niveaux et ne bouge plus ; mais le poste porte des
+arbres hors dépôt qui descendent jusqu'à ~15 niveaux, si bien qu'une borne à 8
+rendrait « balayage interrompu » **à chaque appel** sans jamais rien ajouter à la
+liste. Un avertissement qu'on voit toujours n'est plus lu, et le jour où la
+descente serait vraiment tronquée personne ne le remarquerait. D'où 16 : le
+premier palier où ce poste se balaie en entier. `BUDGET_S = 10` vaut trente fois
+la durée nominale et trois fois la pire mesure connue à cache froid (2,9 s) — il
+n'arbitre pas le cas nominal, il fait finir le cas anormal.
 
 Une borne atteinte se DIT dans `degrade` (« balayage interrompu … ») : rendre
 une liste tronquée avec `degrade` à `null` la ferait passer pour exhaustive.
