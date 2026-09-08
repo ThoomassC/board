@@ -2427,11 +2427,23 @@ $("#np-nom").addEventListener("input", ev => {
    Échap, le clic sur le fond et le bouton Annuler), et n'est donc jamais rejoué
    par l'adoption suivante. */
 let adoptionSuite = null;
-function ouvrirFormProjet(nom, racine, apres) {
+/* `avis_` EST UN AVERTISSEMENT, PAS UNE ERREUR, et il n'existe que pour un
+   geste : adopter un DOSSIER PARENT plutôt qu'un dépôt. Le dialogue s'appelle
+   « nouveau projet », le champ « dossier racine », et l'aide décrit un dépôt :
+   dans le dernier écran avant l'écriture de config.json, le seul indice qui
+   distinguait les deux gestes était l'absence de `/bricoloc-web` en queue de
+   chemin. Or les conséquences ne sont pas les mêmes — dix dépôts dans une
+   colonne, et un lanceur qui s'ouvre sur le dossier et non sur un dépôt.
+   Il se pose dans `#np-msg`, qui est déjà la fente `role="status"` du dialogue
+   et qui est vide à l'ouverture : une seconde zone de message aurait fait deux
+   endroits à regarder pour un formulaire de deux champs. La classe reste
+   neutre — ce n'est ni un échec ni une réussite, et le rouge de l'erreur
+   arrivera dans la même fente si le nom est refusé. */
+function ouvrirFormProjet(nom, racine, apres, avertissement) {
   const n = normaliserNom(nom || "");
   $("#np-nom").value = n;
   $("#np-racine").value = racine || "";
-  texte($("#np-msg"), ""); $("#np-msg").className = "msg";
+  texte($("#np-msg"), avertissement || ""); $("#np-msg").className = "msg";
   texte($("#np-apercu"), "claude-" + (n.toLowerCase() || "nomprojet"));
   adoptionSuite = typeof apres === "function" ? apres : null;
   dlg.showModal();
@@ -2584,7 +2596,21 @@ majAveuFiltre();
      1. autoriser  — un panneau dit ce qui sera lu, la recherche attend ;
      2. choisir    — une ligne de la liste ouvre le formulaire pré-rempli ;
      3. valider    — c'est le formulaire d'adoption ordinaire qui écrit.
-   Aucun de ces gestes n'est mémorisé d'un chargement à l'autre. */
+   Aucun de ces gestes n'est mémorisé d'un chargement à l'autre.
+
+   LES FAMILLES, ET LE BUG QU'ELLES CORRIGENT. `~/CESI_MAALSI_Projects/BricoLoc`
+   porte dix dépôts `bricoloc-*`. Le relevé les rendait comme DIX candidats
+   indépendants, donc la bande proposait dix colonnes BricoLoc pour un seul
+   projet — la liste était juste, la proposition était fausse. Le serveur rend
+   désormais une clé `familles` : un regroupement par dossier parent, avec le
+   nom et la racine à adopter. Le client en tire une ligne de TÊTE par famille,
+   et replie ses membres derrière un dépli — ils restent adoptables un par un,
+   mais ils ne sont plus dix propositions de plus.
+
+   `familles` PEUT ÊTRE ABSENTE, et ce n'est pas un cas dégradé : c'est ce que
+   répond un serveur plus ancien, exactement comme la route entière peut répondre
+   404 (voir `dcChercher`). Absente vaut liste vide, l'écran redevient celui
+   d'avant au mot près, et rien n'affiche de famille creuse. */
 
 const dcSection = $("#decouv"), dcBouton = $("#dc-go"), dcMot = $("#dc-mot"),
       dcJauge = $("#dc-jauge"), dcDegrade = $("#dc-degrade"), dcListe = $("#dc-liste");
@@ -2602,6 +2628,48 @@ let dcReleve = null;          // dernier relevé : {candidats, scannes, duree_ms
 let dcEchec = "";             // phrase d'échec en cours, vide sinon
 let dcRendreFocus = null;     // à qui rendre le focus quand le panneau se ferme
 
+/* LES FAMILLES DÉPLIÉES, PAR RACINE, et repliées par défaut — c'est la demande
+   même : « je ne veux pas dix projets BricoLoc ». Le repli par défaut est admis
+   ici pour la raison qui l'admet au Chantier (voir `chReplie`) : il s'appuie sur
+   un FAIT du contrat de données — une famille compte au moins deux membres —
+   et non sur un jugement du système sur ce qui « semble secondaire ». Portée
+   module et rien d'autre : ni localStorage ni /api/layout, comme l'autorisation
+   juste au-dessus. Un dépli survivant au rechargement ferait réapparaître les
+   dix lignes qu'on vient de replier, sans qu'aucun geste ne l'explique. */
+const dcDeplies = new Set();
+
+/* UNE RACINE COUVRE UN CHEMIN, ELLE NE LUI EST PAS ÉGALE. C'est la règle que le
+   serveur applique déjà (`decouverte._couvert`, `serveur.projet_de`) : adopter
+   `~/CESI_MAALSI_Projects/BricoLoc` fait entrer les dix dépôts qu'il contient
+   dans la même colonne, donc les dix lignes doivent quitter la bande d'un coup —
+   les laisser proposerait dix fois d'adopter ce qui vient d'être adopté.
+   LE SÉPARATEUR EST OBLIGATOIRE, et c'est tout l'intérêt de ne pas écrire un
+   `startsWith` nu : `/a/board` couvrirait alors `/a/board-old`, qui est un autre
+   dépôt. Les séparateurs de queue sont rognés des deux côtés, sinon
+   `/a/board/` ne se reconnaîtrait pas dans `/a/board`. */
+function dcCouvre(racine, chemin) {
+  const r = String(racine == null ? "" : racine).replace(/[\/\\]+$/, "");
+  const c = String(chemin == null ? "" : chemin).replace(/[\/\\]+$/, "");
+  if (!r || !c) return false;
+  if (c === r) return true;
+  const sep = c.charAt(r.length);
+  return c.startsWith(r) && (sep === "/" || sep === "\\");
+}
+
+/* Un identifiant d'élément tiré d'un chemin : `aria-controls` a besoin d'un id,
+   et un chemin porte des `/`, des espaces et des accents. Même rognage que
+   `blocDepot` au Chantier, et pour la même raison.
+
+   LE RANG PASSE DEVANT, et il n'est pas décoratif : le rognage n'est pas
+   injectif — `/a/b` et `/a-b` se réduisent au même slug —, et deux `aria-controls`
+   qui pointent le même id feraient déplier une famille en annonçant l'autre. Le
+   rang, lui, est unique dans un rendu ; le slug reste derrière pour que l'id se
+   lise dans l'inspecteur. */
+function dcIdent(racine, rang) {
+  return "dc-fam-" + rang + "-"
+       + String(racine || "").replace(/[^A-Za-z0-9_-]+/g, "-");
+}
+
 /* Le nombre de dossiers parcourus se compte en milliers : sans séparateur il se
    lit mal, et `4213` a l'air d'un identifiant. La durée reste en secondes à une
    décimale — « 2900 ms » ne dit rien à personne. */
@@ -2613,6 +2681,36 @@ function dcDuree(ms) {
 }
 function dcReleveMot(r) {
   return dcNombre(r.scannes) + " dossiers parcourus en " + dcDuree(r.duree_ms);
+}
+/* LE COMPTE DOIT RESTER VRAI DES DEUX CÔTÉS DU REGROUPEMENT. `candidats` compte
+   des DÉPÔTS, la liste affiche des LIGNES, et dès qu'une famille existe les deux
+   nombres divergent : quatorze dépôts pour cinq lignes. Écrire « 14 projets
+   trouvés » au-dessus de cinq lignes ferait chercher neuf lignes qui n'existent
+   pas — et « 5 projets trouvés » effacerait neuf dépôts du relevé.
+
+   LES NOMBRES DOIVENT S'ADDITIONNER À VOIX HAUTE, et c'est ce que la première
+   rédaction ne faisait pas : « 1 famille de dépôts et 4 dépôts seuls parmi 14
+   dépôts git » est exacte, mais 1 + 4 ne fait pas 14 et rien dans la phrase ne
+   dit où sont passés les neuf autres — le lecteur cherche l'erreur. Le nombre
+   qui manquait est celui des dépôts REGROUPÉS : posé, la phrase se vérifie d'un
+   coup d'œil dans les deux sens (10 + 4 = 14 dépôts, 1 + 4 = 5 lignes). Il se
+   déduit sans nouvelle donnée : tout candidat est regroupé ou à part.
+   « à part » plutôt que « seul » : un dépôt qui n'a pas de frère n'est pas
+   isolé, il est simplement proposé pour lui-même.
+
+   Sans famille, elle rend mot pour mot celle d'avant : c'est ce qui garantit
+   qu'un serveur sans `familles` affiche exactement l'écran d'hier. */
+function dcCompteMot(nDepots, nFamilles, nIsoles) {
+  if (!nFamilles) {
+    return pluriel(nDepots, "projet trouvé", "projets trouvés")
+         + " que le board ne connaît pas";
+  }
+  const regroupes = nDepots - nIsoles;
+  return pluriel(nDepots, "dépôt git", "dépôts git")
+       + " que le board ne connaît pas : "
+       + (nFamilles > 1 ? nFamilles + " dossiers qui en regroupent "
+                        : "1 dossier qui en regroupe ") + regroupes
+       + (nIsoles ? ", et " + pluriel(nIsoles, "dépôt à part", "dépôts à part") : "");
 }
 // Un horodatage de commit ne sert ici qu'à trier l'utile du dormant : la date
 // suffit, l'heure serait du bruit. Absent ou aberrant, on n'écrit rien plutôt
@@ -2696,6 +2794,24 @@ function peindreDecouv() {
     return;
   }
 
+  /* LE RELEVÉ SE LIT AVANT LE DÉGRADÉ, parce que le dégradé a quelque chose à
+     dire des familles. `familles` absente vaut liste vide : un serveur plus
+     ancien n'a pas cette clé, et l'écran doit alors être celui d'hier — pas une
+     rubrique « familles » vide, pas un compte à zéro. */
+  const cands = Array.isArray(dcReleve.candidats) ? dcReleve.candidats : [];
+  const fams = Array.isArray(dcReleve.familles) ? dcReleve.familles : [];
+  /* Un membre de famille n'est PLUS une ligne de premier rang : il vit derrière
+     le dépli de sa famille. Le relevé, lui, garde tous ses candidats — c'est le
+     contrat serveur, et un relevé qui cacherait des dépôts serait un relevé qui
+     ment. C'est la PRÉSENTATION qui replie, pas la donnée. */
+  const parMembre = new Map();
+  for (const f of fams) {
+    for (const m of (Array.isArray(f.membres) ? f.membres : [])) {
+      parMembre.set(String(m || ""), f);
+    }
+  }
+  const isoles = cands.filter(c => !parMembre.has(String(c.root || "")));
+
   /* `degrade` NE SE TAIT PAS. Le serveur l'envoie quand des dossiers n'ont pas
      pu être lus : la liste est alors une liste PARTIELLE, et une liste partielle
      présentée comme complète ferait conclure « il ne manque rien » à qui il
@@ -2714,9 +2830,27 @@ function peindreDecouv() {
     const g = el("b", "dc-alerte", "⚠");
     attr(g, "aria-hidden", "true");
     dcDegrade.append(g, document.createTextNode(" Liste incomplète — " + deg));
+    /* UNE FAMILLE ÉTABLIE SUR UNE LISTE PARTIELLE EST UNE FAMILLE PARTIELLE.
+       Le regroupement se déduit des candidats du relevé : si des dossiers n'ont
+       pas pu être lus, des dépôts frères ont pu échapper au balayage, et
+       « regrouper 10 dépôts » se lit alors comme un inventaire complet du
+       dossier — ce que le serveur n'a pas dit. C'est le même interdit que la
+       ligne au-dessus, un cran plus loin : on n'affirme pas sur une ignorance,
+       y compris quand l'affirmation est un compte. */
+    if (fams.length) {
+      /* Le point est À NOUS, pas au serveur : `_phrase_degrade` ne ponctue pas
+         ses motifs (elle les joint par « ; »), donc sans lui les deux phrases
+         se collaient — « … sautés Le nombre de dépôts annoncé ». Même geste que la
+         branche « aucun candidat » plus bas, qui ponctue `dcReleveMot`. */
+      dcDegrade.append(document.createTextNode(
+        fams.length > 1
+          ? ". Les nombres de dépôts annoncés ci-dessous peuvent donc être trop "
+            + "bas : ces dossiers peuvent en contenir d'autres."
+          : ". Le nombre de dépôts annoncé ci-dessous peut donc être trop bas : "
+            + "ce dossier peut en contenir d'autres."));
+    }
   }
 
-  const cands = Array.isArray(dcReleve.candidats) ? dcReleve.candidats : [];
   if (!cands.length) {
     /* LE VIDE EST UNE BONNE NOUVELLE, et il faut le dire, sinon il se lit comme
        une panne. Zéro candidat ne veut pas dire « rien trouvé » : ça veut dire
@@ -2730,33 +2864,249 @@ function peindreDecouv() {
     return;
   }
 
-  texte(dcMot, pluriel(cands.length, "projet trouvé", "projets trouvés")
-             + " que le board ne connaît pas · " + dcReleveMot(dcReleve)
+  texte(dcMot, dcCompteMot(cands.length, fams.length, isoles.length)
+             + " · " + dcReleveMot(dcReleve)
              + ". Chaque ligne ouvre le formulaire — rien n'est ajouté sans ta validation.");
 
   /* Rendu complet de la liste, et pas de réconciliation par clé : elle ne change
      qu'à un relevé ou à une adoption, jamais au rythme du flux. Le seul focus
      qui vive ici est celui d'une ligne, et c'est `dcRetirer` qui le déplace —
-     ce rendu-là n'est jamais déclenché sous les doigts de l'utilisateur. */
+     ce rendu-là n'est jamais déclenché sous les doigts de l'utilisateur.
+     LES FAMILLES PASSENT DEVANT : ce sont les propositions qui remplacent
+     plusieurs lignes, donc celles qu'on veut lire avant de lire dix dépôts. */
   dcListe.textContent = "";
-  for (const c of cands) {
-    const nom = String(c.name || ""), racine = String(c.root || "");
-    const court = String(c.root_court || racine);
-    const b = el("button", "dc-l");
-    b.type = "button";
-    b.dataset.root = racine;
-    const bas = [];
-    if (c.depot) bas.push(String(c.depot));
-    const d = dcDate(c.dernier_commit_at);
-    if (d) bas.push("dernier commit " + d);
-    b.append(el("b", null, "+ " + nom), el("span", null, court));
-    if (bas.length) b.append(el("em", null, bas.join(" · ")));
-    attr(b, "title", `Adopter « ${court} » comme projet : une colonne à lui, sa `
-      + `couleur, et un lanceur claude-${nom.toLowerCase()}. Le formulaire s'ouvre `
-      + `pré-rempli — tu peux corriger le nom avant de valider.`);
-    b.onclick = () => ouvrirFormProjet(nom, racine, () => dcRetirer(racine));
-    dcListe.append(b);
+  fams.forEach((f, rang) => dcListe.append(dcBlocFamille(f, cands, rang)));
+  for (const c of isoles) dcListe.append(dcLigne(c, null));
+}
+
+/* Une ligne de candidat : le geste est le même qu'elle soit isolée ou repliée
+   dans une famille (ouvrir le formulaire pré-rempli), donc c'est le même dessin
+   et le même code — deux constructeurs auraient fini par diverger sur le
+   `title`, qui est le seul endroit où la promesse d'adoption est écrite.
+
+   `sous` EST LE CHEMIN COURT DE LA FAMILLE, ou null pour une ligne isolée, et il
+   corrige un défaut MESURÉ à l'écran : les dix membres affichaient
+   `~/CESI_MAALSI_Projects/BricoLoc/b…`, coupés au même endroit par l'ellipse,
+   donc dix lignes au chemin identique et illisible. La partie commune est déjà
+   écrite une fois par la famille juste au-dessus : le membre n'en montre que sa
+   queue. Le chemin entier reste dans le `title` du bouton — porté par le
+   `<button>` lui-même, donc atteignable au clavier et annoncé, à la différence
+   d'un `title` sur un `<span>` (voir la doctrine de `#fc-desc`). */
+function dcLigne(c, sous) {
+  const nom = String(c.name || ""), racine = String(c.root || "");
+  const court = String(c.root_court || racine);
+  const b = el("button", sous ? "dc-l dc-membre" : "dc-l");
+  b.type = "button";
+  b.dataset.root = racine;
+  const queue = sous && court.startsWith(sous) ? "…" + court.slice(sous.length) : court;
+  const bas = [];
+  // Le dépôt ne se répète pas quand la queue du chemin l'écrit déjà.
+  if (c.depot && queue !== "…/" + c.depot) bas.push(String(c.depot));
+  const d = dcDate(c.dernier_commit_at);
+  if (d) bas.push("dernier commit " + d);
+  /* LA COLLISION EST DÉJÀ PAYÉE PAR LE SERVEUR, ON NE LA JETTE PAS. `collision`
+     dit qu'un projet déclaré porte déjà ce nom, et le module de découverte
+     l'envoie exactement pour que « le formulaire arrive avec le conflit visible
+     plutôt qu'avec un doublon silencieux ». Sans ce mot, le conflit ne se
+     découvrait qu'APRÈS la validation, dans le message d'échec de
+     `creer_projet` — de la validation après coup là où la prévention était
+     gratuite. Le nom reste corrigeable dans le formulaire, d'où « à corriger »
+     et non « impossible ». */
+  if (c.collision) bas.push("nom déjà pris — à corriger");
+  b.append(el("b", null, "+ " + nom), el("span", null, queue));
+  if (bas.length) b.append(el("em", null, bas.join(" · ")));
+  attr(b, "title", `Adopter « ${court} » comme projet : une colonne à lui, sa `
+    + `couleur, et un lanceur claude-${nom.toLowerCase()}. Le formulaire s'ouvre `
+    + `pré-rempli — tu peux corriger le nom avant de valider.`);
+  b.onclick = () => ouvrirFormProjet(nom, racine, () => dcRetirer(racine));
+  return b;
+}
+
+/* ── LE BLOC DE FAMILLE ───────────────────────────────────────────────────────
+   DEUX BOUTONS, ET IL EN FAUT DEUX. Adopter la famille et déplier ses membres
+   sont deux gestes distincts, et un <button> ne peut pas en contenir un autre :
+   le bloc est donc un conteneur avec la ligne d'adoption, le dépli, puis la
+   boîte des membres. La ligne d'adoption reste un `.dc-l` — elle fait exactement
+   ce que fait une ligne de candidat, à ceci près que la racine adoptée est le
+   DOSSIER PARENT, et que son libellé dit combien de dépôts ce clic ramasse.
+
+   LE DÉPLI EST UN VRAI CONTRÔLE, pas un `<div>` cliquable : `aria-expanded`
+   tenu à jour, `aria-controls` vers la boîte, opérable au clavier sans un
+   attribut de plus, et son libellé écrit l'état (« voir » / « masquer »). Même
+   patron et même chevron dessiné que les plis du Chantier (`.car`, pivoté par
+   `aria-expanded`) — un seul état pour l'apparence et pour l'arbre
+   d'accessibilité, donc rien qui puisse diverger.
+
+   LE DÉPLI NE RE-REND PAS LA LISTE. Il ne fait qu'afficher une boîte déjà
+   construite : le bouton qu'on vient d'actionner survit, garde le focus, et
+   aucune autre ligne ne bouge. La hauteur de la bande, elle, change — d'où
+   `majHauteurDecouv`, sans quoi le toast `#avis` viendrait se poser sur les dix
+   dépôts qu'on vient de révéler (voir la mesure au-dessus de cette fonction). */
+function dcBlocFamille(f, cands, rang) {
+  const nom = String(f.name || ""), racine = String(f.root || "");
+  const court = String(f.root_court || racine);
+  const depots = (Array.isArray(f.depots) ? f.depots : []).map(d => String(d || ""));
+  const membres = (Array.isArray(f.membres) ? f.membres : []).map(m => String(m || ""));
+  const n = membres.length;
+  const ident = dcIdent(racine, rang);
+
+  const bloc = el("div", "dc-fam");
+  bloc.dataset.famille = racine;
+
+  const tete = el("button", "dc-l dc-l-fam");
+  tete.type = "button";
+  tete.dataset.root = racine;
+  /* LE LIBELLÉ NOMME L'OBJET ADOPTÉ, ET IL EST LE SEUL À POUVOIR LE FAIRE.
+     « regrouper 10 dépôts » dit ce que la ligne RANGE, pas ce qu'elle CRÉE :
+     lu vite, il se comprend comme « range mes dix projets BricoLoc ensemble »,
+     alors que le clic déclare UN projet dont la racine est le dossier parent.
+     Le mot « dossier » devant le chemin est l'autre moitié de la correction :
+     la tête et ses membres ont le même dessin, et sans lui le seul indice qui
+     les distingue est l'absence de `/bricoloc-web` en queue de chemin — un
+     détail typographique pour dire un changement de nature. La conséquence
+     entière (le lanceur s'ouvrira sur le dossier) reste dans le `title`, qui
+     est porté par le <button> et donc annoncé. */
+  tete.append(el("b", null, "+ " + nom + " · regrouper ses "
+                            + pluriel(n, "dépôt", "dépôts") + " en un seul projet"),
+              el("span", null, "dossier " + court));
+  /* La liste des dépôts est ROGNÉE À TROIS, et le reste est compté. La ligne est
+     une seule ligne de texte à l'ellipse (`.dc-l em`) : y verser dix noms
+     `bricoloc-*` n'aurait montré que les deux premiers, sans dire qu'il en
+     manquait huit. Trois noms + « +7 autres » tient, et le compte est exact. */
+  if (depots.length) {
+    const trois = depots.slice(0, 3);
+    const reste = depots.length - trois.length;
+    tete.append(el("em", null, trois.join(" · ")
+      + (reste > 0 ? " · +" + reste + " autre" + (reste > 1 ? "s" : "") : "")));
   }
+  const d = dcDate(f.dernier_commit_at);
+  if (d) tete.append(el("em", null, "dernier commit " + d));
+  // Même prévention que sur une ligne de dépôt, et plus utile encore ici : le
+  // nom d'une famille est deviné sur un dossier PARENT, qui a plus de raisons
+  // de heurter un projet déjà déclaré qu'un nom de dépôt.
+  if (f.collision) tete.append(el("em", null, "nom déjà pris — à corriger"));
+  /* « s'y ouvrira » disait le fait sans dire la surprise : le lanceur ouvre une
+     conversation sur le DOSSIER, où il n'y a pas de code — pas sur `bricoloc-web`.
+     C'est la seule conséquence de ce clic qui se découvre au terminal si l'écran
+     ne l'écrit pas ici, et elle se répare d'un `cd`, pas d'un clic. */
+  attr(tete, "title", `Adopter le dossier « ${court} » comme UN projet ${nom} : `
+    + `les ${n} dépôts qu'il contient tiendront dans cette seule colonne, et le `
+    + `lanceur claude-${nom.toLowerCase()} ouvrira une conversation sur ce dossier, `
+    + `pas sur l'un des ${n} dépôts. Le formulaire s'ouvre pré-rempli — tu peux `
+    + `corriger le nom avant de valider.`);
+  tete.onclick = () => ouvrirFormProjet(nom, racine, () => dcRetirer(racine),
+    "Ce dossier contient " + pluriel(n, "dépôt git", "dépôts git")
+    + " : ils tiendront tous dans cette seule colonne, et claude-"
+    + nom.toLowerCase() + " ouvrira une conversation sur le dossier, pas sur "
+    + "l'un des dépôts.");
+
+  const boite = el("div", "dc-membres");
+  boite.id = ident + "-membres";
+  const parRacine = new Map(cands.map(c => [String(c.root || ""), c]));
+  for (const m of membres) {
+    const c = parRacine.get(m);
+    // Un membre que `candidats` ne porte pas ne se fabrique pas : on ne connaît
+    // ni son nom deviné ni sa date, et inventer une ligne d'adoption sur un
+    // chemin qu'on n'a pas vu serait proposer d'adopter une supposition.
+    if (c) boite.append(dcLigne(c, court));
+  }
+
+  const plier = el("button", "dc-plier");
+  plier.type = "button";
+  plier.id = ident + "-plier";
+  attr(plier, "aria-controls", boite.id);
+  const car = el("i", "car");
+  attr(car, "aria-hidden", "true");
+  const txt = el("span", "txt");
+  plier.append(car, txt);
+  const majPlier = () => {
+    const ouvert = dcDeplies.has(racine);
+    attr(plier, "aria-expanded", ouvert ? "true" : "false");
+    boite.hidden = !ouvert;
+    /* LE LIBELLÉ DIT LE BUT, PAS SEULEMENT LE CONTENU. « voir les 10 dépôts »
+       décrit ce qui s'ouvre ; il ne dit pas que c'est LÀ, et nulle part
+       ailleurs, qu'on adopte un seul dépôt de la famille. Qui veut
+       `bricoloc-web` tout seul n'a aucune raison de deviner qu'il faut passer
+       par un dépli, dont le nom promet une lecture et pas une action. Une fois
+       ouvert, le but est atteint : le libellé redevient le simple contraire. */
+    const compte = pluriel(n, "dépôt", "dépôts");
+    const dit = ouvert ? "masquer les " + compte
+                       : "voir les " + compte + ", pour n'en adopter qu'un";
+    texte(txt, dit);
+    /* L'ŒIL SAIT DE QUELLE FAMILLE IL S'AGIT, LE LECTEUR D'ÉCRAN NON. À l'écran
+       le dépli est posé DANS le bloc, sous le nom qu'il commande : le libellé
+       n'a pas à le répéter. Mais un lecteur d'écran ne parcourt pas toujours
+       l'écran ligne à ligne — la liste des boutons de NVDA, le rotor de
+       VoiceOver, le saut de formulaire en formulaire donnent le nom accessible
+       SEUL. Deux familles produisaient alors deux « voir les 10 dépôts, pour
+       n'en adopter qu'un » impossibles à distinguer (WCAG 2.4.6).
+       LE LIBELLÉ VISIBLE EST UN PRÉFIXE DU NOM ACCESSIBLE, et cet ordre est la
+       contrainte : 2.5.3 demande que le texte vu soit contenu tel quel dans le
+       nom annoncé, sans quoi une commande vocale « clique voir les 10 dépôts »
+       ne trouverait plus sa cible. Le nom de la famille est donc AJOUTÉ derrière,
+       jamais glissé au milieu. */
+    attr(plier, "aria-label", dit + " — " + nom);
+    attr(plier, "title", ouvert
+      ? "Replier les dépôts de " + nom + " : la famille reste adoptable en un clic."
+      : "Montrer les " + n + " dépôts de ce dossier, pour en adopter un seul "
+        + "plutôt que la famille entière.");
+  };
+  plier.onclick = () => {
+    if (dcDeplies.has(racine)) dcDeplies.delete(racine); else dcDeplies.add(racine);
+    majPlier();
+    majHauteurDecouv();
+  };
+  majPlier();
+
+  bloc.append(tete, plier, boite);
+  return bloc;
+}
+
+/* LES LIGNES QU'ON PEUT ATTEINDRE AU CLAVIER, DANS L'ORDRE DE L'ÉCRAN. Depuis
+   les familles, ce n'est plus `dcListe.children` : une ligne de famille est
+   imbriquée dans son bloc, et les membres d'une famille repliée sont dans un
+   conteneur `hidden` — donc dans le document, mais hors de l'ordre de
+   tabulation. Rendre le focus à l'un d'eux le ferait disparaître pour de bon.
+   On teste l'attribut plutôt que la géométrie : `closest("[hidden]")` ne force
+   aucun calcul de mise en page, là où `offsetParent` en déclencherait un par
+   ligne. */
+function dcLignesAtteignables() {
+  return [...dcListe.querySelectorAll("button[data-root]")]
+    .filter(n => !n.closest("[hidden]"));
+}
+
+/* CE QUE DEVIENNENT LES FAMILLES QUAND UNE RACINE EST ADOPTÉE : elles restent,
+   ou elles partent. Il n'y a pas de troisième sort, et c'est le refus de
+   chevauchement du serveur qui le décide — pas une préférence d'affichage.
+
+   DEUX SENS DE COUVERTURE, ET IL FAUT LES DEUX :
+     · la racine adoptée couvre la famille — on vient d'adopter son dossier, ou
+       un dossier au-dessus : ses membres sont dedans, la proposition n'a plus
+       d'objet ;
+     · la famille couvre la racine adoptée — on vient d'adopter UN de ses
+       dépôts. C'est le cas vicieux : la famille avait l'air intacte, rognée
+       d'un membre, et sa tête restait cliquable. Or une racine déclarée vit
+       désormais SOUS le dossier parent, et c'est exactement ce que
+       `decouverte._familles` refuse de proposer — au balayage suivant, cette
+       famille aurait disparu. Le clic, lui, PASSAIT : `creer_projet` ne refuse
+       qu'un nom déjà pris ou une racine identique, jamais un emboîtement. On
+       obtenait deux racines emboîtées dans config.json, donc deux colonnes pour
+       le même projet — ce que le regroupement existe pour éviter.
+
+   PAS DE FAMILLE ROGNÉE, DONC, et le code ne prétend plus en fabriquer : les
+   membres sont les enfants directs du parent, si bien qu'une racine qui couvre
+   l'un d'eux est soit ce membre, soit le parent, soit au-dessus — les trois
+   emportent la famille entière. Un membre qui manquerait aux candidats sans que
+   rien ne le couvre sort du contrat serveur ; la famille part alors aussi,
+   plutôt que d'annoncer « voir les 10 dépôts » pour en montrer neuf. */
+function dcFamillesApres(fams, racine, restants) {
+  const vivants = new Set(restants.map(c => String(c.root || "")));
+  return fams.filter(f => {
+    const r = String(f.root || "");
+    if (dcCouvre(racine, r) || dcCouvre(r, racine)) return false;
+    return (Array.isArray(f.membres) ? f.membres : [])
+      .every(m => vivants.has(String(m || "")));
+  });
 }
 
 /* Une ligne adoptée quitte la liste — sinon elle proposerait d'adopter deux fois
@@ -2764,23 +3114,83 @@ function peindreDecouv() {
    Le board, lui, se met à jour tout seul : le prochain instantané SSE porte la
    nouvelle colonne. On ne rebalaie pas le disque pour ça.
 
+   ON RETIRE PAR COUVERTURE, PAS PAR ÉGALITÉ, et c'est ce que les familles
+   changent. Adopter `~/CESI_MAALSI_Projects/BricoLoc` fait entrer ses dix dépôts
+   dans la colonne BRICOLOC (`serveur.projet_de` attribue au premier projet dont
+   la racine préfixe le cwd) : filtrer sur `root === racine` aurait laissé les
+   dix membres proposer d'adopter ce qui vient d'être adopté. Voir `dcCouvre`
+   pour le séparateur obligatoire.
+
    LE FOCUS NE TOMBE PAS. Le bouton qu'on retire est celui qui avait ouvert le
    formulaire, donc celui à qui `close()` vient de rendre la main : le supprimer
    sans rien faire renverrait le focus sur <body> et perdrait la place au clavier
    (WCAG 2.4.3). On le donne à la ligne suivante, sinon à la précédente, sinon au
-   bouton de recherche — qui, lui, ne disparaît jamais. */
+   bouton de recherche — qui, lui, ne disparaît jamais.
+   AVEC LES FAMILLES, LA VOISINE PEUT PARTIR AUSSI : adopter un dossier retire
+   onze lignes d'un coup, et « la suivante » était souvent l'un de ses membres.
+   On balaie donc vers l'aval jusqu'à une ligne qui SURVIT à la couverture, puis
+   vers l'amont, et on ne se contente pas de la première voisine. La cible est
+   ensuite RELUE dans le DOM re-rendu, parce que celui qu'on avait en main a été
+   détruit — et si elle s'est refermée dans un dépli entre-temps, `#dc-go`
+   reprend la main plutôt qu'un bouton invisible. */
 function dcRetirer(racine) {
   if (!dcReleve || !Array.isArray(dcReleve.candidats)) return;
-  const lignes = [...dcListe.children];
-  const i = lignes.findIndex(n => n.dataset && n.dataset.root === racine);
-  dcReleve.candidats = dcReleve.candidats.filter(c => String(c.root || "") !== racine);
-  const suivant = i < 0 ? null : (lignes[i + 1] || lignes[i - 1] || null);
-  const cible = suivant && suivant.dataset ? suivant.dataset.root : null;
+  const avant = dcLignesAtteignables().map(n => n.dataset.root);
+  const i = avant.indexOf(racine);
+
+  const nAvant = dcReleve.candidats.length;
+  dcReleve.candidats = dcReleve.candidats.filter(c => !dcCouvre(racine, String(c.root || "")));
+  const partis = nAvant - dcReleve.candidats.length;
+  let famillesPerdues = 0;
+  if (Array.isArray(dcReleve.familles)) {
+    const avantFams = dcReleve.familles.length;
+    dcReleve.familles = dcFamillesApres(dcReleve.familles, racine, dcReleve.candidats);
+    famillesPerdues = avantFams - dcReleve.familles.length;
+  }
+
+  let cible = null;
+  if (i >= 0) {
+    for (let k = i + 1; k < avant.length && !cible; k++) {
+      if (!dcCouvre(racine, avant[k])) cible = avant[k];
+    }
+    for (let k = i - 1; k >= 0 && !cible; k--) {
+      if (!dcCouvre(racine, avant[k])) cible = avant[k];
+    }
+  }
+
   rendDecouv();
   const rendu = cible
-    ? [...dcListe.children].find(n => n.dataset && n.dataset.root === cible)
+    ? dcLignesAtteignables().find(n => n.dataset.root === cible)
     : null;
   (rendu || dcBouton).focus();
+
+  /* ONZE LIGNES QUI PARTENT D'UN COUP, ÇA S'ANNONCE. Adopter un dépôt retire la
+     ligne qu'on vient de cliquer : le geste explique lui-même son effet, et un
+     message serait du bruit. Adopter un DOSSIER en retire onze — la tête et ses
+     dix membres —, et l'accusé de réception du formulaire (« créé · lanceur
+     claude-… ») disparaît avec lui 1,4 s plus tard : la liste se réorganise
+     donc sans qu'aucun écran n'ait dit que dix propositions venaient d'être
+     absorbées par une seule colonne. Qui doute relance un balayage de tout le
+     répertoire personnel pour vérifier.
+     AUCUN NOM N'ENTRE ICI : `avis()` écrit en innerHTML (voir la doctrine au
+     bas de `dcChercher`). Un compte est un entier tiré de deux longueurs de
+     tableau, il n'a pas de HTML à porter. */
+  if (partis > 1) {
+    avis("<b>Dossier adopté</b> — les " + partis + " dépôts git qu'il contient "
+         + "quittent la liste : le board les rattache tous à cette seule "
+         + "colonne, et ne les proposera plus séparément.");
+  } else if (famillesPerdues > 0) {
+    /* L'AUTRE REMANIEMENT MUET, et il est plus déroutant que le premier :
+       adopter UN dépôt d'une famille fait disparaître la ligne de regroupement
+       et rend ses frères à l'état de propositions séparées. Une seule ligne a
+       été cliquée, plusieurs ont changé de forme — sans un mot, on croit à un
+       bug d'affichage et on relance un balayage pour comprendre. La raison est
+       dite, parce qu'elle est contre-intuitive : c'est le dépôt qu'on vient
+       d'adopter qui rend son dossier parent inadoptable. */
+    avis("<b>Dépôt adopté</b> — son dossier ne peut plus être regroupé en un "
+         + "seul projet : une racine déclarée vit maintenant dedans. Les dépôts "
+         + "qui restent se proposent un par un.");
+  }
 }
 
 /* ── LE BALAYAGE ──────────────────────────────────────────────────────────────
@@ -2852,11 +3262,32 @@ async function dcChercher() {
   } else {
     const n = dcReleve.candidats.length;
     const deg = typeof dcReleve.degrade === "string" && dcReleve.degrade.trim();
+    /* L'ANNONCE COMPTE COMME LA PHRASE VISIBLE, par la même fonction. Les deux
+       nombres ne pouvaient pas diverger tant qu'une ligne valait un dépôt ;
+       avec les familles ils divergent, et faire annoncer « 12 projets trouvés »
+       à qui lit trois lignes lui donnerait neuf lignes à chercher. */
+    const fams = Array.isArray(dcReleve.familles) ? dcReleve.familles : [];
+    const groupes = new Set();
+    for (const f of fams) {
+      for (const m of (Array.isArray(f.membres) ? f.membres : [])) groupes.add(String(m || ""));
+    }
+    const nIsoles = dcReleve.candidats
+      .filter(c => !groupes.has(String(c.root || ""))).length;
     avis("<b>Recherche terminée</b> — "
-         + (n ? pluriel(n, "projet trouvé", "projets trouvés")
-                + " que le board ne connaît pas, sous les colonnes."
+         + (n ? dcCompteMot(n, fams.length, nIsoles)
+                + " — la liste est sous les colonnes."
               : "aucun projet à ajouter : tous les dépôts git du poste sont déjà déclarés.")
-         + (deg ? " La liste est incomplète : des dossiers n'ont pas pu être lus."
+         /* L'AVEU DOIT PORTER SUR LE COMPTE, PAS SEULEMENT SUR LA LISTE, dès
+            qu'un regroupement est proposé. La mise en garde qui dit que « le
+            nombre annoncé peut être trop bas » ne vivait que dans `#dc-degrade`,
+            un `<p>` sans région live : au lecteur d'écran, on entendait
+            « la liste est incomplète », on tabulait jusqu'à « regrouper
+            10 dépôts », et on adoptait sans avoir jamais appris que ces dix
+            sont peut-être douze. Le toast est le seul canal annoncé de cet
+            écran, la phrase doit donc y être aussi. */
+         + (deg ? " La liste est incomplète : des dossiers n'ont pas pu être lus"
+                  + (fams.length ? ", et les nombres de dépôts annoncés peuvent "
+                                   + "donc être trop bas." : ".")
                 : ""));
   }
 }
