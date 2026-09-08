@@ -94,5 +94,35 @@ class DossierDEtatsIllisible(unittest.TestCase):
                 self.board.sessions(int(time.time()))
 
 
+class ReleveDeDecouverteIndisponible(unittest.TestCase):
+    """La route de découverte doit rendre la MÊME forme quand elle n'a rien lu.
+
+    `decouverte.scan` a son propre contrat de retour, gardé par
+    `test_decouverte.py`. Mais la route en fabrique deux autres de sa main — le
+    module absent, et le module qui lève —, et ceux-là ne sont tenus par rien :
+    ils vivent dans `serveur`, loin du contrat qu'ils imitent. C'est exactement
+    la clé qu'on oublie en ajoutant une clé, et le client qui devrait tester la
+    présence d'un champ selon le chemin d'erreur emprunté devinera mal un jour.
+    """
+
+    CLES = {"candidats", "familles", "scannes", "illisibles", "duree_ms", "degrade"}
+
+    def test_le_releve_indisponible_porte_toutes_les_cles_du_contrat(self):
+        releve = serveur.releve_decouverte_indisponible("module Découverte absent")
+
+        self.assertEqual(set(releve), self.CLES)
+
+    def test_le_releve_indisponible_ne_propose_ni_candidat_ni_famille(self):
+        # Zéro, pas None : on n'a rien lu, donc rien à proposer — et le motif
+        # dit pourquoi, à la place d'une liste vide qui aurait l'air d'un
+        # « rien à ajouter, tout est déjà déclaré ».
+        releve = serveur.releve_decouverte_indisponible("erreur du module")
+
+        self.assertEqual(releve["candidats"], [])
+        self.assertEqual(releve["familles"], [])
+        self.assertEqual(releve["scannes"], 0)
+        self.assertEqual(releve["degrade"], "erreur du module")
+
+
 if __name__ == "__main__":
     unittest.main()

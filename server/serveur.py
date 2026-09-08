@@ -559,6 +559,24 @@ def _nom_devine(chemin):
     return nom.upper() if RE_NOM_PROJET.match(nom) else None
 
 
+def releve_decouverte_indisponible(motif):
+    """Le relevé de découverte quand le balayage n'a pas pu avoir lieu.
+
+    UN SEUL ENDROIT FABRIQUE CETTE FORME-LÀ, et c'est tout l'objet de cette
+    fonction. La route a deux chemins où le module ne répond pas — absent, ou
+    tombé en cours d'appel — et ces relevés-ci sont fabriqués ICI et non par
+    `decouverte.scan` : rien ne les tient donc en phase avec son contrat de
+    retour, sauf de les écrire une fois. Un client qui devrait tester la présence
+    d'une clé selon le chemin d'erreur emprunté est un client qui devinera mal un
+    jour ; `familles` à `[]` vaut « aucun regroupement », comme partout.
+
+    Le motif part dans `degrade` : « je n'ai pas pu regarder » est une valeur du
+    contrat, pas l'absence d'une clé.
+    """
+    return {"candidats": [], "familles": [], "scannes": 0, "illisibles": 0,
+            "duree_ms": 0, "degrade": motif}
+
+
 def candidats_projets(els, cfg):
     """[{name, root, convs, idents}] — les dépôts vus, non déclarés, proposables.
 
@@ -1431,15 +1449,13 @@ class Handler(BaseHTTPRequestHandler):
                     "erreur": "découverte non autorisée : appelez "
                               "/api/decouverte?autorise=1"})
             if decouverte is None:
-                return self._envoyer(200, {"candidats": [], "scannes": 0,
-                                           "illisibles": 0, "duree_ms": 0,
-                                           "degrade": "module Découverte absent"})
+                return self._envoyer(200, releve_decouverte_indisponible(
+                    "module Découverte absent"))
             try:
                 return self._envoyer(200, decouverte.scan(BOARD.cfg))
             except Exception as e:
-                return self._envoyer(200, {
-                    "candidats": [], "scannes": 0, "illisibles": 0, "duree_ms": 0,
-                    "degrade": "erreur du module Découverte : %s" % e})
+                return self._envoyer(200, releve_decouverte_indisponible(
+                    "erreur du module Découverte : %s" % e))
         # les polices vivent dans board/fonts/ : un seul sous-dossier autorisé,
         # et _statique() vérifie de toute façon qu'on ne sort pas de board/
         if route.startswith("/fonts/") and route.count("/") == 2:
