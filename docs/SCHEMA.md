@@ -293,13 +293,14 @@ dépôts git présents sur le disque, qu'une conversation les ait visités ou no
          "dernier_commit_at": 1756900000,   mtime de `.git/HEAD`, ou null
          "collision": null}           nom déjà déclaré dans config.json, ou null
       ],
+      "familles": [ ... ],            voir plus bas — regroupements proposés
       "scannes": 412,                 dossiers VISITÉS, pas entrées lues
       "illisibles": 0,                sautés faute de droits — un ENTIER
       "duree_ms": 2900,
       "degrade": null                 null = relevé complet ; sinon, le motif
     }
 
-Les six clés d'un candidat sont TOUJOURS là, les cinq du relevé aussi. `null` y
+Les six clés d'un candidat sont TOUJOURS là, les six du relevé aussi. `null` y
 est une affirmation (« aucune collision », « date inconnue », « j'ai tout lu »),
 pas une clé oubliée — même règle que `sessions_indisponibles`.
 
@@ -343,12 +344,166 @@ Les liens symboliques ne sont **jamais** suivis : un lien vers `~` ou vers un
 parent ferait boucler la descente, et un lien vers un dossier déjà balayé le
 proposerait deux fois sous deux chemins.
 
+### `familles` — dix dépôts frères, une seule proposition
+
+Mesure qui justifie cette clé, `~` complet avec la config.json du poste :
+**14 candidats, dont 10 sont les dépôts `bricoloc-*` de
+`~/CESI_MAALSI_Projects/BricoLoc/`**. La liste de propositions est donc à 71 %
+le bruit d'un SEUL projet, et l'utilisateur ne peut y répondre qu'en créant dix
+colonnes pour un projet qui n'en veut qu'une. Le moteur sait déjà vivre avec une
+racine qui couvre plusieurs dépôts — `decouverte._couvert`, `serveur.projet_de`,
+et TRAVELS_IN_WORLD dont la racine vaut `~/Documents/Projets_Perso` en entier ;
+ce qui manquait, c'était la proposition. Après regroupement : une famille et
+quatre candidats isolés, soit cinq propositions au lieu de quatorze.
+
+    {"name": "BRICOLOC",            nom proposé, passe `RE_NOM_PROJET`
+     "root": "/Users/…/CESI_MAALSI_Projects/BricoLoc",   le dossier PARENT
+     "root_court": "~/CESI_MAALSI_Projects/BricoLoc",
+     "depot": "BricoLoc",           basename du parent, tel qu'il est sur le disque
+     "prefixe": "bricoloc",         préfixe de nom commun détecté, en minuscules
+     "membres": ["/Users/…/bricoloc-web", …],   les `root` des candidats groupés
+     "depots": ["bricoloc-web", …],             leurs basenames, MÊME ordre
+     "dernier_commit_at": 1757000000,  le PLUS RÉCENT des membres, ou null
+     "collision": null}                nom déjà déclaré dans config.json, ou null
+
+Les neuf clés sont TOUJOURS là. `familles` aussi, sur **tous** les chemins de
+retour — refus de concurrence du module, et les deux relevés de repli que la
+route fabrique elle-même (« module Découverte absent », « erreur du module
+Découverte »). Liste vide = « aucun regroupement à proposer » ; un client qui
+devrait tester la présence de la clé selon le chemin d'erreur devinerait mal un
+jour.
+
+**Une famille est une proposition EN PLUS, jamais une amputation.** `candidats`
+garde ses dix membres : un relevé qui les cacherait derrière le regroupement
+mentirait sur le contenu du disque, et c'est le client qui décide de la
+présentation. L'adoption, elle, reste le geste existant — `POST /api/projet`
+avec le `name` et le `root` de la famille, sans route nouvelle.
+
+`membres` et `depots` suivent l'ordre de `candidats` (récence décroissante, nom
+croissant à égalité), et les familles entre elles le même : sinon le dépli d'une
+famille contredirait la liste juste au-dessus.
+
+**Quand `degrade` n'est pas `null`, une famille est établie sur une liste
+PARTIELLE** — des dépôts frères ont pu échapper au balayage. C'est au client de
+le dire ; la détection ne change pas pour autant, sinon un unique dossier
+illisible à l'autre bout de `~` ferait disparaître un regroupement bien établi.
+
+#### Les huit conditions, et pourquoi cinq sont des refus
+
+Rater un regroupement coûte à l'utilisateur les quelques clics qu'il faisait
+déjà hier ; en inventer un lui coûte des colonnes. Un parent n'est proposé que
+si **toutes** ces conditions tiennent :
+
+    · `MEMBRES_MIN = 2` candidats au moins sous ce parent immédiat — un dépôt
+      seul se propose déjà très bien lui-même, et son parent contiendra demain
+      autre chose que lui ;
+    · un préfixe de nom commun de `PREFIXE_MIN = 3` caractères au moins,
+      comparé en minuscules sur les basenames et **rogné de ses séparateurs de
+      queue avant la mesure** — « bricoloc- » devient « bricoloc », et « ab- »
+      ne compte que pour deux caractères ;
+    · ce préfixe **s'arrête sur une frontière de mot chez chaque membre** : un
+      séparateur (`-`, `_`, `.`) ou la fin du nom. `os.path.commonprefix`
+      compare caractère à caractère et ne sait rien des mots — `portail-front`
+      et `portugal-x` partagent « port », quatre caractères, donc assez pour
+      passer le seuil, et le parent serait proposé sous le nom PORT. C'est la
+      condition qui empêche le regroupement d'INVENTER une famille ; le refus
+      est franc, on ne rogne pas jusqu'à retomber sur une frontière plus courte.
+      Le membre qui EST le préfixe en entier, lui, est bien de la famille
+      (`bricoloc` avec `bricoloc-web`) : n'avoir aucun caractère après soi est
+      la frontière la plus franche qui soit ;
+    · le parent n'est ni le point de départ du balayage, ni le répertoire
+      personnel, ni la racine du système : regrouper à `~` reviendrait à
+      proposer « adopte tout ton disque comme un projet », donc une racine qui
+      couvrirait tout dépôt à venir et où atterrirait toute conversation ;
+    · le parent n'est pas déjà couvert par une racine déclarée — sinon on
+      propose ce que config.json déclare déjà ;
+    · **aucun candidat non-membre ne vit sous le parent**, à quelque profondeur
+      que ce soit. `membres` ne liste que les frères de préfixe commun, alors
+      que `root` ramasse tout ce que le dossier contient : un `~/Code` portant
+      `app-web`, `app-api` et `labo/scratchpad` faisait annoncer « regrouper
+      2 dépôts » à une adoption qui en avalait trois, et `scratchpad` quittait
+      la bande sans avoir jamais figuré dans la famille — donc sans que
+      l'utilisateur ait vu partir la colonne qu'il aurait pu adopter. Le refus
+      est franc plutôt qu'un élargissement de `membres` : ces dépôts-là n'ont
+      pas le préfixe commun, les faire entrer dirait « le nom se répète » là où
+      il ne se répète pas. **Corollaire : deux familles emboîtées ne sont jamais
+      proposées ensemble** — les dépôts de la profonde sont, pour la haute, des
+      candidats non-préfixés, donc la haute tombe et la profonde reste ;
+    · **aucune racine déclarée ne vit SOUS le parent** — testé sur les deux
+      formes d'une racine, résolue et telle qu'écrite dans config.json. Le refus
+      le plus important, et le moins évident : `~/Documents/CESI_MAALSI_Projects`
+      contient `projet_clients/Container-calcul`, qui EST un projet déclaré.
+      Adopter le parent créerait deux racines qui se **chevauchent**, et
+      `serveur.projet_de` rend le PREMIER projet dont la racine préfixe le cwd —
+      la colonne d'affectation d'une conversation dépendrait alors de l'ordre
+      des lignes de config.json, un fichier écrit à la main. Une attribution qui
+      dépend de l'ordre d'un fichier édité à la main est un piège, pas une
+      fonctionnalité : la famille n'est pas proposée **du tout**, pas même
+      amputée du dépôt fautif. **Les deux formes de la racine sont regardées**
+      parce que le refus protège `projet_de`, et que `projet_de` compare des
+      `normpath` SANS résoudre les liens : une racine déclarée qui est un lien
+      symbolique vers l'extérieur du parent sort de l'espace résolu — le
+      chevauchement devient invisible à la détection alors qu'il continue
+      d'exister à l'attribution ;
+    · un nom recevable se trouve : `serveur._nom_devine` sur le parent, sinon
+      sur le préfixe. Ni l'un ni l'autre ne passant `RE_NOM_PROJET`, pas de
+      famille — proposer un nom que le formulaire d'adoption refusera est une
+      impasse, même règle que pour les candidats.
+
+La détection part des **candidats retenus** et non des dossiers du disque :
+c'est ce qui rend gratuits les refus que le relevé a déjà tranchés. Un parent
+dont tous les dépôts sont couverts par une racine déclarée n'a plus un seul
+candidat, donc plus de famille — une détection bâtie sur les dossiers
+reproposerait ici une famille sans avoir un membre à lui donner.
+
+Le parent ne porte jamais de `.git` lui-même : s'il en portait un, le balayage
+se serait arrêté sur LUI et aucun de ses enfants ne serait candidat. La
+condition est structurellement toujours vraie, et écrite quand même pour qu'une
+réécriture du balayage ne la perde pas en silence.
+
+#### Le faux positif évité, et le vrai positif assumé
+
+Les deux autres parents du poste disent la règle mieux qu'un exemple inventé :
+
+    · `~/Documents/CESI_MAALSI_cours` porte `dev_sec_ops_tp` et `blueprint` :
+      même parent, aucun préfixe commun. Deux TP sans rapport, à ne PAS
+      regrouper — c'est exactement le faux positif que la fraternité de dossier
+      produirait seule. Sous `~/Documents/Projets_Perso`, ce serait `board`,
+      `portfolio` et `dockshelf` troqués contre une colonne PROJETS_PERSO ;
+    · `~/Documents/CESI_MAALSI_Projects/goodfood` porte `APP-MOBILE` et
+      `API-USER` : préfixe commun « ap », **deux** caractères, donc sous
+      `PREFIXE_MIN`. Cette famille est légitime dans la réalité et le refus est
+      **assumé** : le regroupement se fait « quand le nom se répète », et ici il
+      ne se répète pas. Descendre à 2 attraperait `api-*` et `application-*`
+      sans rapport pour gagner ce seul cas, qui se règle à la main dans le
+      formulaire d'adoption — lequel accepte n'importe quelle racine.
+
 ### Les bornes, et ce qu'elles obligent à dire
 
-Deux bornes, `PROFONDEUR_MAX = 8` et `BUDGET_S = 10`. Mesures sur ce poste :
-`~` complet = 2,9 s pour 16 dépôts ; borné à 6 niveaux = 0,42 s pour 15. La
-profondeur protège d'une arborescence pathologique, le budget d'un disque lent
-ou d'un montage réseau — cas où aucune profondeur ne borne le temps.
+Deux bornes, `PROFONDEUR_MAX = 16` et `BUDGET_S = 10`. La profondeur protège
+d'une arborescence pathologique, le budget d'un disque lent ou d'un montage
+réseau — cas où aucune profondeur ne borne le temps.
+
+**La profondeur n'est pas un réglage de vitesse**, c'est le budget qui tient le
+temps. Mesures sur ce poste, `~` entier, avec la configuration réelle — les six
+projets déclarés en excluent une partie. Le tableau de `decouverte.py` mesure la
+même chose configuration NUE et rend donc 21 candidats : les deux se lisent
+ensemble, ce n'est pas une contradiction.
+
+    profondeur   candidats   dossiers visités   durée    `degrade`
+         4          14              298          15 ms   interrompu
+         8          14            3 047         110 ms   interrompu
+        16          14            9 457         275 ms   null
+        40          14            9 457         228 ms   null
+
+La liste est complète dès 4 niveaux et ne bouge plus ; mais le poste porte des
+arbres hors dépôt qui descendent jusqu'à ~15 niveaux, si bien qu'une borne à 8
+rendrait « balayage interrompu » **à chaque appel** sans jamais rien ajouter à la
+liste. Un avertissement qu'on voit toujours n'est plus lu, et le jour où la
+descente serait vraiment tronquée personne ne le remarquerait. D'où 16 : le
+premier palier où ce poste se balaie en entier. `BUDGET_S = 10` vaut trente fois
+la durée nominale et trois fois la pire mesure connue à cache froid (2,9 s) — il
+n'arbitre pas le cas nominal, il fait finir le cas anormal.
 
 Une borne atteinte se DIT dans `degrade` (« balayage interrompu … ») : rendre
 une liste tronquée avec `degrade` à `null` la ferait passer pour exhaustive.
@@ -361,7 +516,8 @@ une liste tronquée avec `degrade` à `null` la ferait passer pour exhaustive.
 C'est l'opération la plus lente du serveur et elle tourne dans un thread de
 requête. Un appel concurrent est refusé sur-le-champ :
 
-    {"candidats": [], "scannes": 0, "illisibles": 0, "duree_ms": 0,
+    {"candidats": [], "familles": [], "scannes": 0, "illisibles": 0,
+     "duree_ms": 0,
      "degrade": "balayage déjà en cours : réessayez dans quelques secondes"}
 
 Le scénario n'est pas le polling — `autorise=1` implique un geste humain — mais

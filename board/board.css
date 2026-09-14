@@ -732,6 +732,89 @@ body{
 .dc-l:hover b{color:var(--t1)}
 .dc-l:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
 
+/* ── LA FAMILLE : UN GROUPE, DONC UNE SURFACE, PAS UNE LIGNE DE PLUS ──────────
+   `~/CESI_MAALSI_Projects/BricoLoc` porte dix dépôts `bricoloc-*`, et la bande
+   en proposait dix. La famille est la proposition qui les remplace : elle porte
+   une ligne d'adoption, un dépli et dix membres repliés — c'est un GROUPE, et un
+   groupe se lit à sa surface, pas à une ligne de texte de plus.
+
+   ELLE SE DISTINGUE SANS CRIER, ET AUCUNE COULEUR N'EST EMPRUNTÉE. Pas de --sky,
+   réservé à la seule commande de la bande (`.dc-go`) et à l'anneau de focus ;
+   pas de --amber, qui dit ici « je n'ai pas fait ce que tu attendais »
+   (`.dc-mot.mauvais`, `.dc-degrade`) ; pas le pointillé de `.adopt`, qui dit
+   « une place possible, pas encore une place » — la famille, elle, est un fait
+   du relevé. Reste l'escalier de surfaces : --card sur le --panel de la bande,
+   filet neutre, un cran au-dessus de ses voisines et rien de plus.
+
+   TOUTE LA LARGEUR DE LA GRILLE. `.dc-liste` est un auto-fill de colonnes de
+   250 px : rangée dans une cellule, la famille aurait empilé son dépli et ses
+   dix membres dans 250 px à côté de deux candidats isolés, et « cette ligne
+   remplace ces dix-là » aurait cessé de se voir.
+
+   L'OMBRE FINE N'EST PAS UN ORNEMENT, elle est la moitié claire du contraste.
+   L'escalier des surfaces ne va pas dans le même sens dans les deux thèmes :
+   en sombre --card (#272438) est PLUS CLAIR que le --panel (#201E2B) qui le
+   porte, et le bloc se détache ; en clair --card est #FFFFFF sur un --panel
+   #FBFAFD, soit quatre points de blanc — mesuré à l'écran, le bloc y était
+   invisible et ne tenait que par son filet #EAE7F2. `--ombre-fine` est une
+   variable de THÈME, faite exactement pour ça (voir sa définition) : elle pose
+   la surface en clair, et en sombre elle se devine sans rien salir. */
+.dc-fam{
+  grid-column:1/-1;
+  display:flex; flex-direction:column; gap:2px;
+  background:var(--card); border:1px solid var(--line);
+  border-radius:var(--r-ctrl); padding:4px; box-shadow:var(--ombre-fine);
+}
+/* Le survol des lignes doit rester visible SUR la surface du groupe : le --card
+   de `.dc-l:hover` est déjà le fond ici, l'état aurait disparu à l'intérieur. */
+.dc-fam .dc-l:hover{background:var(--card-haut); border-color:var(--edge-off)}
+/* Les trois rangées d'une ligne se calent EN HAUT de leur cellule. Un nom long
+   (`BRICOLOC-SERVICE-TRANSACTIONS`) passe à la ligne et fait grandir toute la
+   rangée de la grille : sans ceci, ses neuf voisines étiraient leurs interlignes
+   pour remplir la hauteur, et « dernier commit » ne s'alignait plus d'une
+   colonne à l'autre. */
+.dc-fam .dc-l{align-content:start}
+/* Le nom de la famille est ce qu'on vient lire — il prend l'encre pleine, là où
+   un candidat isolé reste en --t2 jusqu'au survol. Seul écart de couleur du
+   bloc, et il porte un mot, pas un aplat. */
+.dc-l-fam b{color:var(--t1)}
+/* Le dépli est l'action SECONDAIRE de la famille : rejeté sous la proposition,
+   au petit calibre, et non pleine largeur — même hiérarchie que le pli de
+   réserve du Chantier, dont il reprend le chevron dessiné (`.car`, pivoté par
+   `aria-expanded` : une seule source de vérité pour l'état et l'apparence).
+
+   LE 4 px VERTICAL EST UNE COTE, PAS UN GOÛT — il porte la cible à 24 px de
+   haut, seuil de WCAG 2.5.8. Le calcul, à refaire si l'un des trois change :
+   l'interligne hérité (1,35 × 10,5 px = 14,17 px) + 2 × 4 px de garniture
+   + 2 × 1 px de bordure = 24,17 px. À 3 px la boîte tombait à 22,17 px et ne
+   passait plus que par l'exception d'espacement de ce même critère, avec 0,9 px
+   de marge sur le `gap` de 2 px du bloc : un dépli conforme par accident de
+   voisinage, qu'un jour de calibre aurait cassé sans que rien ne le dise.
+   Toujours sous les 5 px de `.ch-dplier` — l'écart de hiérarchie tient. */
+.dc-plier{
+  display:flex; align-items:center; gap:6px; align-self:flex-start;
+  font-family:var(--mono); font-size:10.5px; color:var(--t3); cursor:pointer;
+  background:none; border:1px solid transparent; border-radius:var(--r-ctrl);
+  padding:4px 7px; margin-left:7px; text-align:left;
+}
+/* Un cran au-dessus du 4 px du pli de réserve : c'est le SEUL dépli de la bande,
+   et il commande dix lignes. À 4 px il se lisait comme une virgule (mesuré à
+   l'écran) ; à 5 px l'empreinte fait ~7 px et le chevron redevient un chevron.
+   Toujours sous les 7 px de l'en-tête de dépôt du Chantier, qui reste
+   l'interaction primaire de sa ligne — l'écart EST la hiérarchie. */
+.dc-plier .car{--car-s:5px; --car-w:1.5px; width:12px; height:12px; color:inherit}
+.dc-plier:hover{background:var(--card-haut); border-color:var(--line); color:var(--t2)}
+.dc-plier:focus-visible{outline:2px solid var(--sky); outline-offset:2px}
+/* Les membres reprennent la grille de la bande, pour l'argument de `.dc-liste`
+   juste au-dessus : dix noms courts en colonne unique feraient défiler les 38 vh
+   de la bande. Le filet gauche dit l'appartenance — ces lignes sont SOUS la
+   famille, pas à côté d'elle — et il est neutre : un filet coloré serait le
+   canal PROJET, qui n'appartient qu'aux colonnes du board. */
+.dc-membres{
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:2px;
+  margin:1px 0 1px 11px; padding-left:8px; border-left:1px solid var(--line);
+}
+
 /* ═════════════════════ bandeau d'attention ════════════════════════════════ */
 /* LA HAUTEUR EST FIXE, 40 px, dans les deux régimes — et ce n'est pas un détail.
    Aucune des media queries qui touchent cette classe ne change sa hauteur : c'est
